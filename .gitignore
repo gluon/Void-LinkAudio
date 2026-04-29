@@ -57,7 +57,6 @@ xcuserdata/
 .vscode/
 .idea/
 *.swp
-*~
 .cache/
 
 # ── TouchDesigner artefacts (just in case) ───────────────────────────────────
