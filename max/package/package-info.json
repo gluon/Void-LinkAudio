@@ -6,7 +6,7 @@
 	"authors": [
 		"Julien Bayle — Structure Void"
 	],
-	"description": "Ableton Link Audio receiver and publisher for Max. Stream audio between Max, Ableton Live, TouchDesigner, VCV Rack, and any other Link Audio host on the local network - sample-accurate, beat-synced, stereo. Exposes void.linkaudio.send~ (publisher) and void.linkaudio.receive~ (receiver). Built on top of Ableton Link Audio (MIT). Not endorsed by Ableton.",
+	"description": "Ableton Link Audio receiver and publisher for Max. Stream audio between Max, Ableton Live, TouchDesigner, VCV Rack, and any other Link Audio host on the local network - sample-accurate, beat-synced, stereo. Exposes void.linkaudio.send~ (publisher) and void.linkaudio.receive~ (receiver). Built on top of Ableton Link Audio (GPL v2+). Not endorsed by Ableton.",
 	"tags": [
 		"externals",
 		"audio",

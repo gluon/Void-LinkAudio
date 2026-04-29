@@ -7,9 +7,21 @@
 // Shared core: this file is compiled into every host (TouchDesigner CHOPs,
 // Max externals, VCV Rack modules, VST3/AU plugins, openFrameworks addon).
 //
-// Released under the MIT License - see LICENSE file at repo root.
-// Built on top of Ableton Link Audio (see ACKNOWLEDGEMENTS.md).
-// Provided AS IS, without warranty of any kind.
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Copyright (C) 2026 Julien Bayle / Structure Void
+//
+// VoidLinkAudio is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 2 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful, but
+// WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+// General Public License for more details — full text in LICENSE at
+// the repo root, or at <https://www.gnu.org/licenses/gpl-2.0.html>.
+//
+// Built on top of Ableton Link Audio (GPL v2+, see ACKNOWLEDGEMENTS.md).
 // ============================================================================
 
 #include "LinkAudioManager.h"

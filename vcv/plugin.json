@@ -2,7 +2,7 @@
   "slug": "VoidLinkAudio",
   "name": "Void Link Audio",
   "version": "2.0.5",
-  "license": "MIT",
+  "license": "GPL-2.0-or-later",
   "brand": "Structure Void",
   "author": "Julien Bayle",
   "authorEmail": "",

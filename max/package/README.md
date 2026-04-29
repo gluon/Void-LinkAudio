@@ -87,7 +87,7 @@ Julien Bayle — Structure Void
 
 ## Acknowledgements
 
-Built on top of [Ableton Link](https://github.com/Ableton/link), the open-source synchronization library by **Ableton AG** (MIT license). Link Audio is the audio extension shipped with Ableton Link starting from Live 12.4.
+Built on top of [Ableton Link](https://github.com/Ableton/link), the open-source synchronization library by **Ableton AG** (GPL-2.0-or-later). Link Audio is the audio extension shipped with Ableton Link starting from Live 12.4.
 
 This implementation is independent and is **not endorsed, certified, or supported by Ableton**. "Ableton", "Live", and "Link" are trademarks of Ableton AG.
 
@@ -95,4 +95,4 @@ References:
 - [Ableton Link source on GitHub](https://github.com/Ableton/link)
 - [Link concepts overview](https://ableton.github.io/link/)
 
-VOID Link Audio is released under the MIT License (see LICENSE at the repo root).
+VOID Link Audio is released under **GPL-2.0-or-later** (see LICENSE at the repo root). It links statically against Ableton Link, which is itself GPL-2.0-or-later. A commercial (non-GPL) Link license is available from Ableton: <link-devs@ableton.com>.
