@@ -8,7 +8,7 @@
 	</digest>
 
 	<description>
-		<o>void.linkaudio.send~</o> publishes one or two channels of audio onto the local Ableton Link Audio network so that any subscribed peer (Ableton Live, TouchDesigner, VCV Rack, another Max patch, etc.) can receive it. The advertised channel is named via the <m>channel</m> attribute and tagged with the <m>peer</m> name. Stereo or mono publication is selected at creation time via <m>@stereo 0|1</m> and cannot be changed at runtime, since it determines the number of signal inlets. Built on top of Ableton Link Audio (MIT license, by Ableton AG); not endorsed by Ableton.
+		<o>void.linkaudio.send~</o> publishes one or two channels of audio onto the local Ableton Link Audio network so that any subscribed peer (Ableton Live, TouchDesigner, VCV Rack, another Max patch, etc.) can receive it. The advertised channel is named via the <m>channel</m> attribute and tagged with the <m>peer</m> name. Stereo or mono publication is selected at creation time via <m>@stereo 0|1</m> and cannot be changed at runtime, since it determines the number of signal inlets. Built on top of Ableton Link Audio (GPL-2.0-or-later, by Ableton AG); not endorsed by Ableton.
 	</description>
 
 	<!--METADATA-->

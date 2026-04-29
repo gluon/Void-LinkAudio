@@ -8,7 +8,7 @@
 	</digest>
 
 	<description>
-		<o>void.linkaudio.receive~</o> subscribes to an audio channel published on the local Ableton Link Audio network and outputs the received signal on its left and right outlets. It works seamlessly with Ableton Live, TouchDesigner, VCV Rack, and any other Link Audio host on the same LAN. Subscription is automatic and resilient: when the polling clock is enabled, the object continually retries to match the requested channel against currently advertised channels, transparently reconnecting after peer drops or channel renaming. Built on top of Ableton Link Audio (MIT license, by Ableton AG); not endorsed by Ableton.
+		<o>void.linkaudio.receive~</o> subscribes to an audio channel published on the local Ableton Link Audio network and outputs the received signal on its left and right outlets. It works seamlessly with Ableton Live, TouchDesigner, VCV Rack, and any other Link Audio host on the same LAN. Subscription is automatic and resilient: when the polling clock is enabled, the object continually retries to match the requested channel against currently advertised channels, transparently reconnecting after peer drops or channel renaming. Built on top of Ableton Link Audio (GPL-2.0-or-later, by Ableton AG); not endorsed by Ableton.
 	</description>
 
 	<!--METADATA-->
