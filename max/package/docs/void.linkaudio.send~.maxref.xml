@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<?xml-stylesheet href="./_c74_ref.xsl" type="text/xsl"?>
+
+<c74object name="void.linkaudio.send~" module="msp" category="audio, network">
+
+	<digest>
+		Publish audio to an Ableton Link Audio channel
+	</digest>
+
+	<description>
+		<o>void.linkaudio.send~</o> publishes one or two channels of audio onto the local Ableton Link Audio network so that any subscribed peer (Ableton Live, TouchDesigner, VCV Rack, another Max patch, etc.) can receive it. The advertised channel is named via the <m>channel</m> attribute and tagged with the <m>peer</m> name. Stereo or mono publication is selected at creation time via <m>@stereo 0|1</m> and cannot be changed at runtime, since it determines the number of signal inlets. Built on top of Ableton Link Audio (MIT license, by Ableton AG); not endorsed by Ableton.
+	</description>
+
+	<!--METADATA-->
+	<metadatalist>
+		<metadata name="author">Julien Bayle — Structure Void</metadata>
+		<metadata name="tag">audio</metadata>
+		<metadata name="tag">network</metadata>
+		<metadata name="tag">link</metadata>
+		<metadata name="tag">ableton</metadata>
+		<metadata name="tag">streaming</metadata>
+		<metadata name="tag">sync</metadata>
+		<metadata name="tag">send</metadata>
+	</metadatalist>
+
+	<!--INLETS-->
+	<inletlist>
+		<inlet id="0" type="signal">
+			<digest>(signal) audio L  /  messages, attributes</digest>
+			<description>
+				Left audio channel input. Also accepts messages such as <m>bang</m>, <m>info</m>, plus attribute setters.
+			</description>
+		</inlet>
+		<inlet id="1" type="signal">
+			<digest>(signal) audio R</digest>
+			<description>
+				Right audio channel input. Present only when the object is created with <m>@stereo 1</m> (default).
+			</description>
+		</inlet>
+	</inletlist>
+
+	<!--OUTLETS-->
+	<outletlist>
+		<outlet id="0" type="message">
+			<digest>dumpout: status as a t_dictionary</digest>
+			<description>
+				Status output. A <m>dictionary &lt;name&gt;</m> message is emitted automatically whenever a meaningful state change occurs (publishing started/stopped, peer count changed) and on demand via the <m>info</m> message. Route through <o>dict.view</o>, <o>dict.unpack</o>, or <o>route</o> to consume it.
+			</description>
+		</outlet>
+	</outletlist>
+
+	<!--ARGUMENTS-->
+	<objarglist>
+	</objarglist>
+
+	<!--MESSAGES-->
+	<methodlist>
+		<method name="bang">
+			<digest>silent retry</digest>
+			<description>
+				Re-applies the current state. If publication has not yet started for some reason (e.g. <m>enable</m> just toggled, channel name just changed), this triggers an immediate retry. State changes resulting from the retry will produce an automatic dict dump on the dumpout. This message produces no output by itself.
+			</description>
+		</method>
+
+		<method name="info">
+			<digest>dump status as a t_dictionary</digest>
+			<description>
+				Outputs a structured dictionary on the dumpout containing the full current state: <m>enabled</m>, <m>audio_enabled</m>, <m>num_peers</m>, <m>publishing</m>, <m>stereo</m>, <m>channel</m>, <m>peer</m>, <m>frames_published</m>, <m>frames_no_buffer</m>, <m>frames_commit_fail</m>, <m>tempo</m>, <m>beat</m>, <m>phase</m>, <m>quantum</m>, <m>poll</m>, <m>pollinterval</m>, <m>num_audio_channels</m>, plus a sub-dictionary <m>channels</m> listing every channel currently advertised on the network as <i>index → [channel_name, peer_name]</i>.
+			</description>
+		</method>
+	</methodlist>
+
+	<!--ATTRIBUTES-->
+	<attributelist>
+
+		<attribute name="enable" get="1" set="1" type="long" size="1">
+			<digest>Enable Link Audio</digest>
+			<description>
+				When set to <m>1</m> (default), the object participates in the Link Audio network and publishes its incoming signal under the configured channel name. When set to <m>0</m>, the channel is removed from the network and audio is dropped silently.
+			</description>
+		</attribute>
+
+		<attribute name="stereo" get="1" set="1" type="long" size="1">
+			<digest>Stereo (creation-time only)</digest>
+			<description>
+				Determines whether the object exposes one (mono) or two (stereo) signal inlets. <m>1</m> = stereo (default), <m>0</m> = mono. Must be set as a creation argument: <m>@stereo 0</m> or <m>@stereo 1</m>. Changing this attribute at runtime has no effect on the inlet count.
+			</description>
+		</attribute>
+
+		<attribute name="peer" get="1" set="1" type="symbol" size="1">
+			<digest>Peer Name (this peer's identity on the network)</digest>
+			<description>
+				Identity advertised to other Link Audio peers. Other hosts (Receive nodes, Live, etc.) reference this string when they want to attach specifically to channels published here. Defaults to <m>Max</m>. Pick something distinctive (e.g. <m>Max-Stage1</m>) when several Max instances run on the same network. Note: Link Audio uses a single shared peer name per process, so all Link Audio objects within the same Max instance share whichever value was set most recently.
+			</description>
+		</attribute>
+
+		<attribute name="channel" get="1" set="1" type="symbol" size="1">
+			<digest>Channel Name (the published stream's name)</digest>
+			<description>
+				Name under which this audio stream is advertised on the Link Audio network. Defaults to <m>Max Out</m>. Subscribers (Live, TouchDesigner, VCV Rack, other Max patches) match channels by exact name, so use a stable, descriptive name. When this attribute changes, the publication is restarted under the new name.
+			</description>
+		</attribute>
+
+		<attribute name="quantum" get="1" set="1" type="float" size="1">
+			<digest>Quantum (beats)</digest>
+			<description>
+				Number of beats per quantum used both for the <m>beat</m> and <m>phase</m> values reported via <m>info</m> and as part of the per-buffer Link timing context attached to each commit. Range 1.0 to 16.0, default 4.0.
+			</description>
+		</attribute>
+
+		<attribute name="poll" get="1" set="1" type="long" size="1">
+			<digest>Auto-poll (publish retry + status)</digest>
+			<description>
+				When set to <m>1</m> (default), an internal Max clock fires every <m>pollinterval</m> milliseconds and re-applies the object state. This keeps publication robust against transient setup issues and catches network changes for status reporting. Set to <m>0</m> to disable the clock; you can then drive retries manually with <m>bang</m>.
+			</description>
+		</attribute>
+
+		<attribute name="pollinterval" get="1" set="1" type="long" size="1">
+			<digest>Polling interval (ms)</digest>
+			<description>
+				Interval in milliseconds between automatic state-reapply ticks when <m>poll</m> is enabled. Range 50 to 60000, default 250.
+			</description>
+		</attribute>
+
+	</attributelist>
+
+	<!--RELATED-->
+	<seealsolist>
+		<seealso name="void.linkaudio.receive~"/>
+		<seealso name="adc~"/>
+		<seealso name="dict.view"/>
+		<seealso name="dict.unpack"/>
+		<seealso name="route"/>
+	</seealsolist>
+
+</c74object>

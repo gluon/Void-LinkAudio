@@ -1,0 +1,5 @@
+build/
+dist/
+plugin.dylib
+*.vcvplugin
+.DS_Store

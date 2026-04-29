@@ -1,0 +1,78 @@
+# ── Build artifacts ──────────────────────────────────────────────────────────
+build/
+Build/
+**/build/
+**/Build/
+**/cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# ── macOS ────────────────────────────────────────────────────────────────────
+.DS_Store
+**/.DS_Store
+DerivedData/
+**/DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcworkspace/
+!default.xcworkspace/
+
+# ── Compiled binaries — macOS ────────────────────────────────────────────────
+*.mxo
+*.mxo/
+*.so
+*.dylib
+*.plugin
+*.plugin/
+*.vst3
+*.vst3/
+*.component
+*.component/
+*.app
+*.app/
+
+# ── Compiled binaries — Windows ──────────────────────────────────────────────
+*.mxe64
+*.dll
+*.exe
+*.exp
+*.lib
+*.pdb
+*.idb
+*.ilk
+*.obj
+*.map
+
+# ── VCV Rack release format ──────────────────────────────────────────────────
+*.vcvplugin
+
+# ── Object / intermediate files (Linux, generic) ─────────────────────────────
+*.o
+*.a
+
+# ── Editor / IDE ─────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*~
+.cache/
+
+# ── TouchDesigner artefacts (just in case) ───────────────────────────────────
+*.toebak
+*.tox.bak
+
+# ── openFrameworks (lives in its own repo) ───────────────────────────────────
+of/
+
+# ── Local files we don't want to publish ─────────────────────────────────────
+tree.txt
+files/
+*.log
+notes.local.md
+
+# ── Python cache ─────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc

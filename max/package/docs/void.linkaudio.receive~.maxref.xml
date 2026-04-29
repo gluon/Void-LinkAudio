@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<?xml-stylesheet href="./_c74_ref.xsl" type="text/xsl"?>
+
+<c74object name="void.linkaudio.receive~" module="msp" category="audio, network">
+
+	<digest>
+		Receive audio from an Ableton Link Audio channel
+	</digest>
+
+	<description>
+		<o>void.linkaudio.receive~</o> subscribes to an audio channel published on the local Ableton Link Audio network and outputs the received signal on its left and right outlets. It works seamlessly with Ableton Live, TouchDesigner, VCV Rack, and any other Link Audio host on the same LAN. Subscription is automatic and resilient: when the polling clock is enabled, the object continually retries to match the requested channel against currently advertised channels, transparently reconnecting after peer drops or channel renaming. Built on top of Ableton Link Audio (MIT license, by Ableton AG); not endorsed by Ableton.
+	</description>
+
+	<!--METADATA-->
+	<metadatalist>
+		<metadata name="author">Julien Bayle — Structure Void</metadata>
+		<metadata name="tag">audio</metadata>
+		<metadata name="tag">network</metadata>
+		<metadata name="tag">link</metadata>
+		<metadata name="tag">ableton</metadata>
+		<metadata name="tag">streaming</metadata>
+		<metadata name="tag">sync</metadata>
+		<metadata name="tag">receive</metadata>
+	</metadatalist>
+
+	<!--INLETS-->
+	<inletlist>
+		<inlet id="0" type="message">
+			<digest>messages, attributes</digest>
+			<description>
+				Accepts messages such as <m>bang</m> and <m>info</m>, plus attribute setters like <m>poll</m>, <m>fromchannel</m>, <m>frompeer</m>, etc.
+			</description>
+		</inlet>
+	</inletlist>
+
+	<!--OUTLETS-->
+	<outletlist>
+		<outlet id="0" type="signal">
+			<digest>(signal) audio L</digest>
+			<description>
+				Left channel of the received audio stream. For mono streams, this carries the entire signal (and is also mirrored on the right outlet).
+			</description>
+		</outlet>
+		<outlet id="1" type="signal">
+			<digest>(signal) audio R</digest>
+			<description>
+				Right channel of the received audio stream. For mono streams, mirrors the left outlet.
+			</description>
+		</outlet>
+		<outlet id="2" type="message">
+			<digest>dumpout: status as a t_dictionary</digest>
+			<description>
+				Status output. A <m>dictionary &lt;name&gt;</m> message is emitted automatically whenever a meaningful state change occurs (subscription gained/lost, peer count changed, channel list changed) and on demand via the <m>info</m> message. Route through <o>dict.view</o>, <o>dict.unpack</o>, or <o>route</o> to consume it.
+			</description>
+		</outlet>
+	</outletlist>
+
+	<!--ARGUMENTS-->
+	<objarglist>
+	</objarglist>
+
+	<!--MESSAGES-->
+	<methodlist>
+		<method name="bang">
+			<digest>silent retry</digest>
+			<description>
+				Re-applies the current state. If a matching channel is now available on the network and the object is not yet subscribed, this triggers an immediate subscription attempt. State changes resulting from the retry will produce an automatic dict dump on the dumpout. This message produces no output by itself.
+			</description>
+		</method>
+
+		<method name="info">
+			<digest>dump status as a t_dictionary</digest>
+			<description>
+				Outputs a structured dictionary on the dumpout containing the full current state: <m>enabled</m>, <m>audio_enabled</m>, <m>num_peers</m>, <m>subscribed</m>, <m>fromchannel</m>, <m>frompeer</m>, <m>stream_sample_rate</m>, <m>stream_num_channels</m>, <m>frames_received</m>, <m>frames_dropped</m>, <m>tempo</m>, <m>beat</m>, <m>phase</m>, <m>quantum</m>, <m>poll</m>, <m>pollinterval</m>, <m>num_audio_channels</m>, plus a sub-dictionary <m>channels</m> listing every channel currently advertised on the network as <i>index → [channel_name, peer_name]</i>.
+			</description>
+		</method>
+	</methodlist>
+
+	<!--ATTRIBUTES-->
+	<attributelist>
+
+		<attribute name="enable" get="1" set="1" type="long" size="1">
+			<digest>Enable Link Audio</digest>
+			<description>
+				When set to <m>1</m> (default), the object participates in the Link Audio network and attempts to subscribe to the requested channel. When set to <m>0</m>, the object is fully detached: any active subscription is dropped and the audio outlets emit silence.
+			</description>
+		</attribute>
+
+		<attribute name="frompeer" get="1" set="1" type="symbol" size="1">
+			<digest>From Peer (the source SEND's Peer Name)</digest>
+			<description>
+				Peer Name of the SEND we want to subscribe to (matches the value the source peer set in its own Peer Name parameter). Essential to disambiguate when several peers publish a channel with the same name. Without it, the first match wins. Empty by default; set it to the exact peer name announced by the source (e.g. <m>VCVRack</m>, <m>Live</m>, <m>TouchDesigner</m>).
+			</description>
+		</attribute>
+
+		<attribute name="fromchannel" get="1" set="1" type="symbol" size="1">
+			<digest>From Channel (channel name to subscribe to)</digest>
+			<description>
+				Exact name of the audio channel to receive on the source peer (matches the Channel Name parameter on the publisher side). Channel names are case-sensitive and must match exactly what the publishing peer advertises (e.g. <m>Main</m> for Live's master output). When this attribute changes, any active subscription is dropped and a new subscription is attempted at the next polling tick.
+			</description>
+		</attribute>
+
+		<attribute name="quantum" get="1" set="1" type="float" size="1">
+			<digest>Quantum (beats)</digest>
+			<description>
+				Number of beats per quantum used for the <m>beat</m> and <m>phase</m> values reported via <m>info</m>. Range 1.0 to 16.0, default 4.0. Does not affect audio reception itself; purely a framing convenience for downstream beat-aware logic.
+			</description>
+		</attribute>
+
+		<attribute name="poll" get="1" set="1" type="long" size="1">
+			<digest>Auto-poll (subscribe retry + status)</digest>
+			<description>
+				When set to <m>1</m> (default), an internal Max clock fires every <m>pollinterval</m> milliseconds and re-applies the object state. This makes subscription resilient: as soon as a matching channel appears on the network, the object subscribes automatically. Set to <m>0</m> to disable the clock; you can then drive retries manually with <m>bang</m>.
+			</description>
+		</attribute>
+
+		<attribute name="pollinterval" get="1" set="1" type="long" size="1">
+			<digest>Polling interval (ms)</digest>
+			<description>
+				Interval in milliseconds between automatic state-reapply ticks when <m>poll</m> is enabled. Range 50 to 60000, default 250. Lower values react faster to network changes at a marginal CPU cost; higher values save CPU but slow reconnection.
+			</description>
+		</attribute>
+
+	</attributelist>
+
+	<!--RELATED-->
+	<seealsolist>
+		<seealso name="void.linkaudio.send~"/>
+		<seealso name="dac~"/>
+		<seealso name="dict.view"/>
+		<seealso name="dict.unpack"/>
+		<seealso name="route"/>
+	</seealsolist>
+
+</c74object>

@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<?xml-stylesheet href="_c74_vig.xsl" type="text/xsl"?>
+
+<vignette name="VOID Link Audio"
+          package="void.linkaudio">
+
+  <!-- ========================================================= -->
+  <!-- METADATA -->
+  <!-- ========================================================= -->
+
+  <metadatalist>
+    <metadata name="author">Julien Bayle — Structure Void</metadata>
+    <metadata name="tag">audio</metadata>
+    <metadata name="tag">network</metadata>
+    <metadata name="tag">link</metadata>
+    <metadata name="tag">ableton</metadata>
+    <metadata name="tag">streaming</metadata>
+    <metadata name="tag">interprocess</metadata>
+    <metadata name="tag">sync</metadata>
+  </metadatalist>
+
+  <!-- ========================================================= -->
+  <!-- TITLE -->
+  <!-- ========================================================= -->
+
+  <h1>VOID Link Audio</h1>
+
+  <p>
+    VOID Link Audio is a Max package that brings Ableton Link Audio
+    streaming directly into the Max patcher.
+  </p>
+
+  <p>
+    It exposes two MSP objects, <o>void.linkaudio.send~</o> and
+    <o>void.linkaudio.receive~</o>, that let any Max patch publish
+    and receive audio over the local Link Audio network alongside
+    Ableton Live, TouchDesigner, VCV Rack, and any other Link Audio
+    host on the same LAN.
+  </p>
+
+  <p>
+    Built on top of Ableton Link Audio (MIT license, by Ableton AG).
+    Not endorsed by Ableton.
+  </p>
+
+  <cr/>
+
+  <!-- ========================================================= -->
+  <!-- CORE IDEA -->
+  <!-- ========================================================= -->
+
+  <h2>Core Concept</h2>
+
+  <p>
+    The core idea behind VOID Link Audio is simple and explicit:
+  </p>
+
+  <ul>
+    <li>any application publishes one or more named audio channels</li>
+    <li>any application subscribes to a named audio channel</li>
+  </ul>
+
+  <p>
+    Channels are identified by name and discovered automatically over
+    the local network. Audio flows in real time, sample-accurate, and
+    in lock-step with the shared Ableton Link tempo and beat.
+  </p>
+
+  <cr/>
+
+  <!-- ========================================================= -->
+  <!-- THE TWO OBJECTS -->
+  <!-- ========================================================= -->
+
+  <h2>The Two Objects</h2>
+
+  <h3>void.linkaudio.send~</h3>
+
+  <p>
+    Publishes one or two channels of audio onto the network under a
+    user-defined channel name. The number of inlets is fixed at
+    creation time via the <m>@stereo</m> attribute (<m>@stereo 1</m>
+    for two inlets, <m>@stereo 0</m> for one). The advertised channel
+    is named via <m>@channel</m> and tagged with the local <m>@peer</m>
+    name.
+  </p>
+
+  <h3>void.linkaudio.receive~</h3>
+
+  <p>
+    Subscribes to an audio channel published on the network and outputs
+    the received signal on its left and right outlets. The target is
+    addressed by <m>@frompeer</m> (the source peer's name) and
+    <m>@fromchannel</m> (the channel name on that peer). Subscription is
+    automatic and resilient: when the polling clock is enabled, the
+    object continually retries to match the requested target against
+    currently advertised channels and transparently reconnects after
+    peer drops.
+  </p>
+
+  <cr/>
+
+  <!-- ========================================================= -->
+  <!-- IDENTIFICATION MODEL -->
+  <!-- ========================================================= -->
+
+  <h2>Peer and Channel Names</h2>
+
+  <p>
+    Every Link Audio participant on the network is identified by two
+    pieces of information:
+  </p>
+
+  <ul>
+    <li>a <b>peer name</b>, advertised once per process</li>
+    <li>one or more <b>channel names</b>, advertised per stream</li>
+  </ul>
+
+  <p>
+    A subscriber identifies its target by the pair
+    (<m>frompeer</m>, <m>fromchannel</m>). Specifying <m>frompeer</m>
+    is essential when multiple peers publish a channel with the same
+    name. Channel names are case-sensitive.
+  </p>
+
+  <p>
+    Within a single Max instance, the local peer identity is shared
+    across all VOID Link Audio objects (Link Audio uses a single
+    shared peer name per process). On the Send side this identity
+    is set via <m>@peer</m>. On the Receive side, no local peer
+    name is exposed: the Receive only cares about the source's name
+    via <m>@frompeer</m>.
+  </p>
+
+  <cr/>
+
+  <!-- ========================================================= -->
+  <!-- AUTO-POLL -->
+  <!-- ========================================================= -->
+
+  <h2>Automatic Polling</h2>
+
+  <p>
+    Both objects ship with an internal Max clock that periodically
+    re-applies their state. This makes the network connection robust
+    against transient setup issues and naturally handles peers
+    appearing and disappearing on the network.
+  </p>
+
+  <p>
+    The clock is controlled by two attributes:
+  </p>
+
+  <ul>
+    <li><m>@poll 0|1</m> enables or disables the clock</li>
+    <li><m>@pollinterval &lt;ms&gt;</m> sets the tick period (50 to 60000 ms)</li>
+  </ul>
+
+  <p>
+    With <m>@poll 1</m> (the default), there is generally no need to
+    manage subscriptions or retries by hand.
+  </p>
+
+  <cr/>
+
+  <!-- ========================================================= -->
+  <!-- STATUS REPORTING -->
+  <!-- ========================================================= -->
+
+  <h2>Status Reporting via Dictionary</h2>
+
+  <p>
+    Both objects expose a status dictionary on their dumpout. The
+    dictionary contains a complete snapshot of the object state,
+    including:
+  </p>
+
+  <ul>
+    <li>connection flags (enabled, audio_enabled, subscribed/publishing)</li>
+    <li>peer count and the list of channels currently visible on the network</li>
+    <li>stream parameters (sample rate, channel count)</li>
+    <li>traffic counters (frames received/published, drops, no-buffer events)</li>
+    <li>Link timing values (tempo, beat, phase, quantum)</li>
+  </ul>
+
+  <p>
+    A fresh dictionary is dumped automatically whenever a meaningful
+    state change occurs (subscription gained/lost, peer count changed,
+    channel list changed) and on demand by sending the <m>info</m>
+    message. Editing attributes does not spam the dumpout.
+  </p>
+
+  <p>
+    Route the dictionary through <o>dict.view</o> for inspection,
+    <o>dict.unpack</o> for fan-out, or <o>route</o> for selective
+    handling.
+  </p>
+
+  <cr/>
+
+  <!-- ========================================================= -->
+  <!-- INTEROP -->
+  <!-- ========================================================= -->
+
+  <h2>Interoperability</h2>
+
+  <p>
+    VOID Link Audio is fully compatible with any host that implements
+    the Ableton Link Audio protocol, including:
+  </p>
+
+  <ul>
+    <li>Ableton Live (Link Audio In / Link Audio Out track inputs)</li>
+    <li>TouchDesigner (Link Audio Send / Receive CHOPs)</li>
+    <li>VCV Rack (Void Link Audio Send / Receive modules)</li>
+    <li>any VST3 / AU host (Structure Void's VoidLinkAudio plugins)</li>
+    <li>any other Max patch using the same package</li>
+  </ul>
+
+  <p>
+    Streams are exchanged on the local network with sample-accurate
+    timing. Audio published from one host can be received by an
+    arbitrary number of subscribers simultaneously.
+  </p>
+
+  <cr/>
+
+  <!-- ========================================================= -->
+  <!-- PHILOSOPHY -->
+  <!-- ========================================================= -->
+
+  <h2>Design Philosophy</h2>
+
+  <p>
+    VOID Link Audio aims to be:
+  </p>
+
+  <ul>
+    <li>explicit — you choose what to publish, you choose what to receive</li>
+    <li>resilient — auto-poll handles transient network state silently</li>
+    <li>observable — the dumpout dictionary always reflects current truth</li>
+    <li>portable — the same idea, the same names, across hosts</li>
+  </ul>
+
+  <p>
+    The package is the Max-side counterpart of a broader VOID Link
+    Audio effort that also targets TouchDesigner, VCV Rack,
+    openFrameworks, and plug-in formats.
+  </p>
+
+  <cr/>
+
+  <!-- ========================================================= -->
+  <!-- SEE ALSO -->
+  <!-- ========================================================= -->
+
+  <h2>See Also</h2>
+
+  <ul>
+    <li><o>void.linkaudio.send~</o> — publish audio to a Link Audio channel</li>
+    <li><o>void.linkaudio.receive~</o> — receive audio from a Link Audio channel</li>
+  </ul>
+
+</vignette>

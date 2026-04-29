@@ -1,0 +1,68 @@
+{
+	"name": "void.linkaudio",
+	"displayname": "VOID Link Audio",
+	"version": "1.0.0",
+	"author": "Julien Bayle",
+	"authors": [
+		"Julien Bayle — Structure Void"
+	],
+	"description": "Ableton Link Audio receiver and publisher for Max. Stream audio between Max, Ableton Live, TouchDesigner, VCV Rack, and any other Link Audio host on the local network - sample-accurate, beat-synced, stereo. Exposes void.linkaudio.send~ (publisher) and void.linkaudio.receive~ (receiver). Built on top of Ableton Link Audio (MIT). Not endorsed by Ableton.",
+	"tags": [
+		"externals",
+		"audio",
+		"network",
+		"link",
+		"ableton",
+		"streaming",
+		"interprocess",
+		"sync",
+		"send",
+		"receive"
+	],
+	"website": "https://structure-void.com/tools/void-linkaudio/",
+	"extends": "",
+	"extensible": 0,
+	"max_version_min": "9.0.0",
+	"max_version_max": "none",
+	"os": {
+		"macintosh": {
+			"min_version": "11.0",
+			"platform": [
+				"x64",
+				"arm64"
+			]
+		},
+		"windows": {
+			"min_version": "none",
+			"platform": [
+				"x64"
+			]
+		}
+	},
+	"homepatcher": "VOID_LinkAudio.maxpat",
+	"package_extra": {
+		"reverse_domain": "com.structure-void",
+		"copyright": "Copyright (c) 2026 Structure Void"
+	},
+	"filelist": {
+		"externals": [
+			"void.linkaudio.send~.mxo",
+			"void.linkaudio.receive~.mxo",
+			"void.linkaudio.send~.mxe64",
+			"void.linkaudio.receive~.mxe64"
+		],
+		"help": [
+			"void.linkaudio.send~.maxhelp",
+			"void.linkaudio.receive~.maxhelp"
+		],
+		"docs": [
+			"void.linkaudio.send~.maxref.xml",
+			"void.linkaudio.receive~.maxref.xml",
+			"topics/void.linkaudio_topic.maxvig.xml"
+		],
+		"extras": [
+			"VOID_LinkAudio.maxpat"
+		]
+	},
+	"c74install": 1
+}
