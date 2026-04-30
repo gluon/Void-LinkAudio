@@ -4,22 +4,24 @@
 <c74object name="void.linkaudio.send~" module="msp" category="audio, network">
 
 	<digest>
-		Publish audio to an Ableton Link Audio channel
+		Publish audio to an Ableton Link Audio channel and expose Link timing as audio-rate signals
 	</digest>
 
 	<description>
-		<o>void.linkaudio.send~</o> publishes one or two channels of audio onto the local Ableton Link Audio network so that any subscribed peer (Ableton Live, TouchDesigner, VCV Rack, another Max patch, etc.) can receive it. The advertised channel is named via the <m>channel</m> attribute and tagged with the <m>peer</m> name. Stereo or mono publication is selected at creation time via <m>@stereo 0|1</m> and cannot be changed at runtime, since it determines the number of signal inlets. Built on top of Ableton Link Audio (GPL-2.0-or-later, by Ableton AG); not endorsed by Ableton.
+		<o>void.linkaudio.send~</o> publishes one or two channels of audio onto the local Ableton Link Audio network so that any subscribed peer (Ableton Live, TouchDesigner, VCV Rack, another Max patch, etc.) can receive it. In addition, it exposes the current Link session timing as three audio-rate signals (tempo, phase, transport) sampled at the start of every DSP buffer, so that the patch generating the audio to publish can synchronize itself sample-accurately to the shared session. The advertised channel is named via the <m>channel</m> attribute and tagged with the <m>peer</m> name. Stereo or mono publication is selected at creation time via <m>@stereo 0|1</m> and cannot be changed at runtime, since it determines the number of signal inlets. Built on top of Ableton Link Audio (GPL-2.0-or-later, by Ableton AG); not endorsed by Ableton.
 	</description>
 
 	<!--METADATA-->
 	<metadatalist>
-		<metadata name="author">Julien Bayle — Structure Void</metadata>
+		<metadata name="author">Julien Bayle - Structure Void</metadata>
 		<metadata name="tag">audio</metadata>
 		<metadata name="tag">network</metadata>
 		<metadata name="tag">link</metadata>
 		<metadata name="tag">ableton</metadata>
 		<metadata name="tag">streaming</metadata>
 		<metadata name="tag">sync</metadata>
+		<metadata name="tag">tempo</metadata>
+		<metadata name="tag">transport</metadata>
 		<metadata name="tag">send</metadata>
 	</metadatalist>
 
@@ -28,7 +30,7 @@
 		<inlet id="0" type="signal">
 			<digest>(signal) audio L  /  messages, attributes</digest>
 			<description>
-				Left audio channel input. Also accepts messages such as <m>bang</m>, <m>info</m>, plus attribute setters.
+				Left audio channel input. Also accepts messages such as <m>bang</m>, <m>info</m>, plus attribute setters (<m>tempo</m>, <m>transport</m>, <m>channel</m>, ...).
 			</description>
 		</inlet>
 		<inlet id="1" type="signal">
@@ -41,7 +43,25 @@
 
 	<!--OUTLETS-->
 	<outletlist>
-		<outlet id="0" type="message">
+		<outlet id="0" type="signal">
+			<digest>(signal) tempo (BPM)</digest>
+			<description>
+				Current Link session tempo in BPM, emitted as an audio-rate signal. Slowly varying. Updated at the start of every DSP buffer from <m>captureAudioSessionState()</m>. Independent of publishing state: this outlet keeps producing meaningful values even when <m>@enable 0</m> or no sink is currently active.
+			</description>
+		</outlet>
+		<outlet id="1" type="signal">
+			<digest>(signal) phase [0, quantum)</digest>
+			<description>
+				Sawtooth phase signal in the range <m>[0, quantum)</m>, derived from <m>beatAtTime() % quantum</m> at the start of every DSP buffer and advanced linearly across the buffer using <m>beatsPerSample = tempo / 60 / sampleRate</m>. Wraps cleanly at quantum boundaries. Useful for downbeat detection, phase-locked LFOs, and quantized triggering of the audio you are about to publish.
+			</description>
+		</outlet>
+		<outlet id="2" type="signal">
+			<digest>(signal) transport (0/1)</digest>
+			<description>
+				Mirrors the Link session's transport state as a binary audio-rate signal: <m>1.0</m> when the session is playing, <m>0.0</m> otherwise. Follows the result of <m>session.isPlaying()</m>. Requires <m>startStopSync</m> on the session, which is enabled internally.
+			</description>
+		</outlet>
+		<outlet id="3" type="message">
 			<digest>dumpout: status as a t_dictionary</digest>
 			<description>
 				Status output. A <m>dictionary &lt;name&gt;</m> message is emitted automatically whenever a meaningful state change occurs (publishing started/stopped, peer count changed) and on demand via the <m>info</m> message. Route through <o>dict.view</o>, <o>dict.unpack</o>, or <o>route</o> to consume it.
@@ -65,7 +85,7 @@
 		<method name="info">
 			<digest>dump status as a t_dictionary</digest>
 			<description>
-				Outputs a structured dictionary on the dumpout containing the full current state: <m>enabled</m>, <m>audio_enabled</m>, <m>num_peers</m>, <m>publishing</m>, <m>stereo</m>, <m>channel</m>, <m>peer</m>, <m>frames_published</m>, <m>frames_no_buffer</m>, <m>frames_commit_fail</m>, <m>tempo</m>, <m>beat</m>, <m>phase</m>, <m>quantum</m>, <m>poll</m>, <m>pollinterval</m>, <m>num_audio_channels</m>, plus a sub-dictionary <m>channels</m> listing every channel currently advertised on the network as <i>index → [channel_name, peer_name]</i>.
+				Outputs a structured dictionary on the dumpout containing the full current state: <m>enabled</m>, <m>audio_enabled</m>, <m>num_peers</m>, <m>publishing</m>, <m>stereo</m>, <m>channel</m>, <m>peer</m>, <m>frames_published</m>, <m>frames_no_buffer</m>, <m>frames_commit_fail</m>, <m>tempo</m>, <m>transport</m>, <m>beat</m>, <m>phase</m>, <m>quantum</m>, <m>poll</m>, <m>pollinterval</m>, <m>num_audio_channels</m>, plus a sub-dictionary <m>channels</m> listing every channel currently advertised on the network as <i>index -&gt; [channel_name, peer_name]</i>.
 			</description>
 		</method>
 	</methodlist>
@@ -76,7 +96,7 @@
 		<attribute name="enable" get="1" set="1" type="long" size="1">
 			<digest>Enable Link Audio</digest>
 			<description>
-				When set to <m>1</m> (default), the object participates in the Link Audio network and publishes its incoming signal under the configured channel name. When set to <m>0</m>, the channel is removed from the network and audio is dropped silently.
+				When set to <m>1</m> (default), the object participates in the Link Audio network and publishes its incoming signal under the configured channel name. When set to <m>0</m>, the channel is removed from the network and audio is dropped silently. Timing outlets keep producing valid values regardless of this setting, as long as the underlying Link session is alive.
 			</description>
 		</attribute>
 
@@ -104,14 +124,28 @@
 		<attribute name="quantum" get="1" set="1" type="float" size="1">
 			<digest>Quantum (beats)</digest>
 			<description>
-				Number of beats per quantum used both for the <m>beat</m> and <m>phase</m> values reported via <m>info</m> and as part of the per-buffer Link timing context attached to each commit. Range 1.0 to 16.0, default 4.0.
+				Number of beats per quantum, used by the <m>phase~</m> outlet (sawtooth period), by the <m>beat</m> / <m>phase</m> values reported via <m>info</m>, and as part of the per-buffer Link timing context attached to each commit. Range 1.0 to 16.0, default 4.0.
+			</description>
+		</attribute>
+
+		<attribute name="tempo" get="1" set="1" type="float" size="1">
+			<digest>Session tempo (BPM, R/W)</digest>
+			<description>
+				Read/write mirror of the Link session tempo. Reading queries the live session via <m>captureAppSessionState().tempo()</m>, so values reflect changes initiated by any peer (Live, another Max patch, etc.). Writing commits a new tempo back to the session, which propagates to all peers. Range 20.0 to 999.0 BPM. Mirror sync to <o>attrui</o> / <o>pattr</o> happens via the polling clock (default 250 ms).
+			</description>
+		</attribute>
+
+		<attribute name="transport" get="1" set="1" type="long" size="1">
+			<digest>Session transport (0/1, R/W)</digest>
+			<description>
+				Read/write mirror of the Link session's transport state (play/stop). Reading queries <m>captureAppSessionState().isPlaying()</m>; writing commits a new state via <m>setIsPlaying()</m>. Propagation between peers requires Start/Stop Sync on each side; this object enables it internally on the shared session. <m>1</m> = playing, <m>0</m> = stopped.
 			</description>
 		</attribute>
 
 		<attribute name="poll" get="1" set="1" type="long" size="1">
-			<digest>Auto-poll (publish retry + status)</digest>
+			<digest>Auto-poll (publish retry + status + attribute mirror)</digest>
 			<description>
-				When set to <m>1</m> (default), an internal Max clock fires every <m>pollinterval</m> milliseconds and re-applies the object state. This keeps publication robust against transient setup issues and catches network changes for status reporting. Set to <m>0</m> to disable the clock; you can then drive retries manually with <m>bang</m>.
+				When set to <m>1</m> (default), an internal Max clock fires every <m>pollinterval</m> milliseconds and (1) re-applies the object state for robustness against transient setup issues, (2) refreshes the local <m>tempo</m> and <m>transport</m> attribute storage from the live session and notifies observers (<o>attrui</o>, <o>pattr</o>) via <m>object_attr_touch</m>. Set to <m>0</m> to disable the clock; you can then drive retries manually with <m>bang</m>, but external tempo/transport changes will no longer auto-update the attributes.
 			</description>
 		</attribute>
 

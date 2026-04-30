@@ -9,8 +9,18 @@
             "modernui": 1
         },
         "classnamespace": "box",
-        "rect": [ 400.0, 349.0, 979.0, 670.0 ],
+        "rect": [ 341.0, 142.0, 979.0, 670.0 ],
         "boxes": [
+            {
+                "box": {
+                    "id": "obj-5",
+                    "maxclass": "comment",
+                    "numinlets": 1,
+                    "numoutlets": 0,
+                    "patching_rect": [ 400.0, 46.0, 105.0, 20.0 ],
+                    "text": "v 0.1.1 30/04/26"
+                }
+            },
             {
                 "box": {
                     "id": "obj-24",
@@ -36,8 +46,8 @@
                     "id": "obj-19",
                     "maxclass": "newobj",
                     "numinlets": 1,
-                    "numoutlets": 3,
-                    "outlettype": [ "signal", "signal", "" ],
+                    "numoutlets": 6,
+                    "outlettype": [ "signal", "signal", "signal", "signal", "signal", "" ],
                     "patching_rect": [ 194.0, 579.0, 130.0, 22.0 ],
                     "text": "void.linkaudio.receive~"
                 }
@@ -47,8 +57,8 @@
                     "id": "obj-18",
                     "maxclass": "newobj",
                     "numinlets": 2,
-                    "numoutlets": 1,
-                    "outlettype": [ "" ],
+                    "numoutlets": 4,
+                    "outlettype": [ "signal", "signal", "signal", "" ],
                     "patching_rect": [ 194.0, 537.0, 118.0, 22.0 ],
                     "text": "void.linkaudio.send~"
                 }
@@ -76,7 +86,6 @@
                     "numoutlets": 1,
                     "outlettype": [ "" ],
                     "patching_rect": [ 568.0, 331.0, 121.0, 21.0 ],
-                    "presentation_linecount": 3,
                     "text": ";\rmax launchbrowser https://structure-void.com"
                 }
             },
@@ -110,7 +119,6 @@
                     "numinlets": 1,
                     "numoutlets": 0,
                     "patching_rect": [ 568.0, 241.0, 202.0, 20.0 ],
-                    "presentation_linecount": 2,
                     "text": "official openframeworks addon:"
                 }
             },
@@ -121,7 +129,6 @@
                     "numinlets": 1,
                     "numoutlets": 0,
                     "patching_rect": [ 568.0, 259.0, 256.1133327484131, 20.0 ],
-                    "presentation_linecount": 2,
                     "text": "https://github.com/gluon/ofxAbletonLinkAudio",
                     "underline": 1
                 }
@@ -137,7 +144,6 @@
                     "numoutlets": 1,
                     "outlettype": [ "" ],
                     "patching_rect": [ 721.0, 330.0, 111.0, 21.0 ],
-                    "presentation_linecount": 2,
                     "text": ";\rmax launchbrowser https://julienbayle.net"
                 }
             },
@@ -148,7 +154,7 @@
                     "maxclass": "comment",
                     "numinlets": 1,
                     "numoutlets": 0,
-                    "patching_rect": [ 9.0, 167.0, 493.0, 328.0 ],
+                    "patching_rect": [ 9.0, 167.0, 496.0, 328.0 ],
                     "text": "VOID Link Audio brings Ableton Link Audio into Max/MSP.\n\nAbleton Link, since 2016, has provided LAN-wide tempo, beat and phase synchronization for hundreds of audio applications. Link Audio (introduced with Ableton Live 12.4 in May 2026) extends Link with the ability to also stream audio between peers — sample-accurate, beat-aligned, with automatic discovery and resilient subscription.\n\nVoidLinkAudio is a multi-host integration of Link Audio for tools that don't support it natively: Max/MSP (this package), TouchDesigner, VCV Rack, and openFrameworks. All of them interoperate with each other and with Ableton Live, which speaks Link Audio out of the box.\n\nThis Max package provides:\n\n  • void.linkaudio.send~     — publish 1 or 2 channels of audio under a named channel\n  • void.linkaudio.receive~  — subscribe to (peer, channel) and output the received audio\n\nBoth objects expose a status t_dictionary on their dumpout that always reflects the current network state (peers, channels, traffic, Link timing).\n\nMac (Apple Silicon + Intel) and Windows x64 supported. Right-click any object and choose \"Open Help\" for a tutorial.\n\nBuilt on top of Ableton Link Audio (GPL-2.0-or-later, by Ableton AG). Independent project, not endorsed by Ableton."
                 }
             },
@@ -196,7 +202,6 @@
                     "numoutlets": 1,
                     "outlettype": [ "" ],
                     "patching_rect": [ 568.0, 204.0, 157.0, 21.0 ],
-                    "presentation_linecount": 2,
                     "text": ";\rmax launchbrowser https://github.com/gluon/Void-LinkAudio"
                 }
             },
@@ -271,7 +276,7 @@
                     "numoutlets": 1,
                     "outlettype": [ "jit_matrix" ],
                     "patching_rect": [ 9.0, 25.0, 100.0, 100.0 ],
-                    "pic": "/Users/julien/DATA/WORK/RESEARCH_DEV/20260425_LinkAudio/void_logo.png"
+                    "pic": "void_logo.png"
                 }
             },
             {
@@ -344,7 +349,7 @@
                     "maxclass": "comment",
                     "numinlets": 1,
                     "numoutlets": 0,
-                    "patching_rect": [ 568.0, 22.0, 397.0, 47.0 ],
+                    "patching_rect": [ 568.0, 22.0, 402.0, 47.0 ],
                     "presentation": 1,
                     "presentation_linecount": 2,
                     "presentation_rect": [ 470.0, 10.0, 434.0, 47.0 ],

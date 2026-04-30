@@ -36,6 +36,34 @@ Channel names are case-sensitive. Within one Max process, the local peer name is
 
 ---
 
+## Link session timing
+
+In addition to streaming audio, both objects expose the shared Link session
+on dedicated outlets:
+
+- **`tempo~`** — current session tempo in BPM (audio-rate signal)
+- **`phase~`** — phase position within the quantum, scaled to `[0, 1]`
+- **`transport~`** — `1` when the Link transport is playing, `0` otherwise
+
+Tempo and transport are also **writable** via attributes or messages:
+
+```
+[tempo 130(    →    void.linkaudio.send~ @channel "drums"
+[transport 1(  →    void.linkaudio.send~ @channel "drums"
+```
+
+Or as attributes at instantiation:
+
+```
+[void.linkaudio.send~ @channel "drums" @tempo 130 @transport 1]
+```
+
+Changes propagate to every Link peer on the network — Live, TouchDesigner,
+VCV Rack, etc. — and incoming changes from other peers are reflected back
+on the outlets.
+
+---
+
 ## Installation
 
 Drop this folder into your Max user packages directory:

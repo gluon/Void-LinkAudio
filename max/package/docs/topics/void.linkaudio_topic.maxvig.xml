@@ -9,7 +9,7 @@
   <!-- ========================================================= -->
 
   <metadatalist>
-    <metadata name="author">Julien Bayle — Structure Void</metadata>
+    <metadata name="author">Julien Bayle - Structure Void</metadata>
     <metadata name="tag">audio</metadata>
     <metadata name="tag">network</metadata>
     <metadata name="tag">link</metadata>
@@ -17,6 +17,8 @@
     <metadata name="tag">streaming</metadata>
     <metadata name="tag">interprocess</metadata>
     <metadata name="tag">sync</metadata>
+    <metadata name="tag">tempo</metadata>
+    <metadata name="tag">transport</metadata>
   </metadatalist>
 
   <!-- ========================================================= -->
@@ -35,7 +37,10 @@
     <o>void.linkaudio.receive~</o>, that let any Max patch publish
     and receive audio over the local Link Audio network alongside
     Ableton Live, TouchDesigner, VCV Rack, and any other Link Audio
-    host on the same LAN.
+    host on the same LAN. Both objects also expose the live Link
+    session timing (tempo, phase, transport) as audio-rate signals,
+    making the shared session clock directly available for
+    sample-accurate scheduling and modulation in the patch.
   </p>
 
   <p>
@@ -58,6 +63,7 @@
   <ul>
     <li>any application publishes one or more named audio channels</li>
     <li>any application subscribes to a named audio channel</li>
+    <li>the live Link session timing flows alongside the audio</li>
   </ul>
 
   <p>
@@ -82,7 +88,10 @@
     creation time via the <m>@stereo</m> attribute (<m>@stereo 1</m>
     for two inlets, <m>@stereo 0</m> for one). The advertised channel
     is named via <m>@channel</m> and tagged with the local <m>@peer</m>
-    name.
+    name. In addition to publishing audio, it outputs the current
+    Link tempo, phase and transport as audio-rate signals so the
+    patch generating the audio can synchronize itself to the shared
+    session.
   </p>
 
   <h3>void.linkaudio.receive~</h3>
@@ -91,12 +100,72 @@
     Subscribes to an audio channel published on the network and outputs
     the received signal on its left and right outlets. The target is
     addressed by <m>@frompeer</m> (the source peer's name) and
-    <m>@fromchannel</m> (the channel name on that peer). Subscription is
-    automatic and resilient: when the polling clock is enabled, the
-    object continually retries to match the requested target against
-    currently advertised channels and transparently reconnects after
-    peer drops.
+    <m>@fromchannel</m> (the channel name on that peer). The same
+    timing outlets (tempo, phase, transport) are exposed so a downstream
+    patch can react to the session timing of the audio it receives.
+    Subscription is automatic and resilient: when the polling clock is
+    enabled, the object continually retries to match the requested
+    target against currently advertised channels and transparently
+    reconnects after peer drops.
   </p>
+
+  <cr/>
+
+  <!-- ========================================================= -->
+  <!-- TIMING SIGNALS -->
+  <!-- ========================================================= -->
+
+  <h2>Link Timing as Audio Signals</h2>
+
+  <p>
+    Both objects expose three audio-rate signal outlets reflecting
+    the shared Link session timing:
+  </p>
+
+  <ul>
+    <li><b>tempo~</b> - session BPM, slowly varying</li>
+    <li><b>phase~</b> - sawtooth in <m>[0, quantum)</m>, wraps at quantum boundaries</li>
+    <li><b>transport~</b> - <m>0.0</m> when stopped, <m>1.0</m> when playing</li>
+  </ul>
+
+  <p>
+    These are sampled at the start of each DSP buffer from
+    <m>captureAudioSessionState()</m> and advanced linearly across the
+    buffer using <m>beatsPerSample = tempo / 60 / sampleRate</m>. They
+    keep producing meaningful values regardless of subscription or
+    publication state, as long as the underlying Link session is alive.
+    Use the wrap of <m>phase~</m> to detect downbeats, drive
+    phase-locked LFOs, gate triggers on <m>transport~</m>, and so on.
+  </p>
+
+  <cr/>
+
+  <!-- ========================================================= -->
+  <!-- TEMPO / TRANSPORT R/W -->
+  <!-- ========================================================= -->
+
+  <h2>Tempo and Transport as R/W Attributes</h2>
+
+  <p>
+    Both objects expose <m>@tempo</m> (BPM, 20-999) and
+    <m>@transport</m> (0/1) as bidirectional attributes that mirror
+    the live Link session state.
+  </p>
+
+  <ul>
+    <li>Reading queries the session live, so external changes (from
+        Live, another peer, another Max patch) are reflected immediately
+        when the attributes are queried.</li>
+    <li>Writing commits a new tempo or transport state back to the
+        session, propagating to all peers. Transport propagation
+        relies on Start/Stop Sync, which is enabled internally on
+        the shared session.</li>
+    <li>The polling clock periodically refreshes the attribute storage
+        from the session and notifies observers
+        (<o>attrui</o>, <o>pattr</o>, inspector) via
+        <m>object_attr_touch</m>, so external tempo/transport changes
+        eventually appear in the UI without manual refresh.</li>
+  </ul>
 
   <cr/>
 
@@ -143,8 +212,10 @@
   <p>
     Both objects ship with an internal Max clock that periodically
     re-applies their state. This makes the network connection robust
-    against transient setup issues and naturally handles peers
-    appearing and disappearing on the network.
+    against transient setup issues, naturally handles peers appearing
+    and disappearing on the network, and refreshes the
+    <m>tempo</m> / <m>transport</m> attribute mirrors when the session
+    is changed externally.
   </p>
 
   <p>
@@ -158,7 +229,7 @@
 
   <p>
     With <m>@poll 1</m> (the default), there is generally no need to
-    manage subscriptions or retries by hand.
+    manage subscriptions, retries, or attribute refresh by hand.
   </p>
 
   <cr/>
@@ -180,7 +251,7 @@
     <li>peer count and the list of channels currently visible on the network</li>
     <li>stream parameters (sample rate, channel count)</li>
     <li>traffic counters (frames received/published, drops, no-buffer events)</li>
-    <li>Link timing values (tempo, beat, phase, quantum)</li>
+    <li>Link timing values (tempo, transport, beat, phase, quantum)</li>
   </ul>
 
   <p>
@@ -236,10 +307,11 @@
   </p>
 
   <ul>
-    <li>explicit — you choose what to publish, you choose what to receive</li>
-    <li>resilient — auto-poll handles transient network state silently</li>
-    <li>observable — the dumpout dictionary always reflects current truth</li>
-    <li>portable — the same idea, the same names, across hosts</li>
+    <li>explicit - you choose what to publish, you choose what to receive</li>
+    <li>resilient - auto-poll handles transient network state silently</li>
+    <li>observable - the dumpout dictionary always reflects current truth</li>
+    <li>portable - the same idea, the same names, across hosts</li>
+    <li>tight - timing is exposed at audio rate so the patch can stay in lock-step with the session</li>
   </ul>
 
   <p>
@@ -257,8 +329,8 @@
   <h2>See Also</h2>
 
   <ul>
-    <li><o>void.linkaudio.send~</o> — publish audio to a Link Audio channel</li>
-    <li><o>void.linkaudio.receive~</o> — receive audio from a Link Audio channel</li>
+    <li><o>void.linkaudio.send~</o> - publish audio + expose timing</li>
+    <li><o>void.linkaudio.receive~</o> - receive audio + expose timing</li>
   </ul>
 
 </vignette>

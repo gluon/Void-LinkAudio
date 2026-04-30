@@ -86,6 +86,47 @@ Parameters::setup(OP_ParameterManager* m)
         p.clampMins[0]     = true;
         m->appendFloat(p);
     }
+
+    // ---- Tempo (R/W mirror of the session BPM) ----
+    // Setting this param pushes the new tempo to the shared Link session,
+    // which propagates to all peers. The CHOP only pushes when this param
+    // actually changes; external tempo changes (e.g. Live) are NOT mirrored
+    // back into this param (params represent user intent, the live session
+    // value is exposed via the Info CHOP `tempo` channel).
+    {
+        OP_NumericParameter p;
+        p.name             = TempoName;
+        p.label            = TempoLabel;
+        p.page             = "Link Audio";
+        p.defaultValues[0] = 120.0;
+        p.minValues[0]     = 20.0;
+        p.maxValues[0]     = 999.0;
+        p.minSliders[0]    = 60.0;
+        p.maxSliders[0]    = 200.0;
+        p.clampMins[0]     = true;
+        p.clampMaxes[0]    = true;
+        m->appendFloat(p);
+    }
+
+    // ---- Transport (R/W mirror of session play/stop) ----
+    // Toggle: 1 = playing, 0 = stopped. Propagation between peers requires
+    // Start/Stop Sync, which the LinkAudioManager enables internally.
+    // Same push-on-change semantics as Tempo; live state via Info CHOP
+    // `transport` channel.
+    {
+        OP_NumericParameter p;
+        p.name             = TransportName;
+        p.label            = TransportLabel;
+        p.page             = "Link Audio";
+        p.defaultValues[0] = 0;
+        p.minValues[0]     = 0;
+        p.maxValues[0]     = 1;
+        p.minSliders[0]    = 0;
+        p.maxSliders[0]    = 1;
+        p.clampMins[0]     = true;
+        p.clampMaxes[0]    = true;
+        m->appendInt(p);
+    }
 }
 
 bool
@@ -112,4 +153,16 @@ double
 Parameters::evalQuantum(const OP_Inputs* in)
 {
     return in->getParDouble(QuantumName);
+}
+
+double
+Parameters::evalTempo(const OP_Inputs* in)
+{
+    return in->getParDouble(TempoName);
+}
+
+bool
+Parameters::evalTransport(const OP_Inputs* in)
+{
+    return in->getParInt(TransportName) != 0;
 }

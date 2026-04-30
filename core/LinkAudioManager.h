@@ -18,7 +18,7 @@
 // This program is distributed in the hope that it will be useful, but
 // WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-// General Public License for more details — full text in LICENSE at
+// General Public License for more details, full text in LICENSE at
 // the repo root, or at <https://www.gnu.org/licenses/gpl-2.0.html>.
 //
 // Built on top of Ableton Link Audio (GPL v2+, see ACKNOWLEDGEMENTS.md).
@@ -30,20 +30,24 @@
 // LinkAudioManager
 //
 // Owns the single shared ableton::LinkAudio instance for this plugin.
-// Acquired via shared_ptr from CHOP instances; the underlying LinkAudio
-// is destroyed when the last CHOP that referenced it is destroyed.
+// Acquired via shared_ptr from CHOP / external instances; the underlying
+// LinkAudio is destroyed when the last referencing object is destroyed.
 //
 // Thread-safety:
 //   - acquire() is thread-safe.
 //   - linkAudio() returns a reference; calls into LinkAudio itself are
 //     governed by the per-method thread-safety contract documented in
 //     LinkAudio.hpp.
+//   - setTempo / setIsPlaying / tempo / isPlaying use the app-thread
+//     capture/commit pattern; safe to call from host UI / message threads,
+//     NOT from the audio thread. For audio-thread reads, use
+//     linkAudio().captureAudioSessionState() directly in perform routines.
 // ============================================================================
 #include "LinkAudioPlatform.h"   // must come before <ableton/...> on Windows
 #include <ableton/LinkAudio.hpp>
 
 #include <memory>
-#include <mutex> 
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -66,6 +70,25 @@ public:
     std::vector<Channel> channels();
     void                 setPeerName(const std::string& name);
     std::string          peerName()        const;
+
+    // ---- Session state convenience (app-thread; capture/commit pattern) ----
+    //
+    // These wrap the standard Link capture/commit dance so callers don't
+    // have to re-implement it in every host. Safe to call from host
+    // message / UI threads.
+
+    /// Set session tempo (BPM). Propagates to all Link peers.
+    void   setTempo(double bpm);
+
+    /// Read current session tempo (BPM).
+    double tempo();
+
+    /// Set transport playing/stopped. Requires startStopSync (enabled in ctor).
+    /// Propagates to all Link peers.
+    void   setIsPlaying(bool playing);
+
+    /// Read current transport state.
+    bool   isPlaying();
 
     // Non-copyable / non-movable
     LinkAudioManager(const LinkAudioManager&)            = delete;

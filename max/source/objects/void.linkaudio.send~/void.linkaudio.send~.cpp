@@ -23,41 +23,56 @@
 
 /*
     void.linkaudio.send~
-    
-    Publish audio to an Ableton Link Audio channel on the LAN.
-    Mirror of void.linkaudio.in~, but the data flows the other way.
-    
+
+    Publish audio to an Ableton Link Audio channel on the LAN, plus expose
+    Link timing context as audio-rate signals.
+
     Inlets:
         1 or 2 signal inlets (depending on @stereo, default stereo)
         + the message inlet on inlet 0
     Outlets:
-        1 dumpout for status messages and dict
-    
+        3 signal outlets : tempo~, phase~, transport~
+        1 dumpout (rightmost) for status messages and dict
+
     Attributes:
-        @enable        0/1   — enable Link Audio (default 1)
-        @stereo        0/1   — 1 = 2 inlets stereo, 0 = 1 inlet mono
+        @enable        0/1   - enable Link Audio (default 1)
+        @stereo        0/1   - 1 = 2 inlets stereo, 0 = 1 inlet mono
                                (must be set as a creation argument; cannot
                                be changed at runtime because it changes the
                                number of signal inlets)
-        @peer          sym   — local peer name advertised (default "Max")
-        @channel       sym   — name of the Link Audio channel to publish on
+        @peer          sym   - local peer name advertised (default "Max")
+        @channel       sym   - name of the Link Audio channel to publish on
                                (default "Max Out")
-        @quantum       float — quantum used for beat / phase mapping (default 4)
-        @poll          0/1   — auto-retry publish + auto-status (default 1)
-        @pollinterval  long  — polling interval in ms (default 250, range 50..60000)
-    
+        @quantum       float - quantum used for beat / phase mapping (default 4)
+        @tempo         float - session tempo in BPM (R/W, propagates to peers,
+                               clipped to 20..999)
+        @transport     0/1   - session transport state (R/W, propagates to peers
+                               via startStopSync; reads isPlaying() live)
+        @poll          0/1   - auto-retry publish + auto-status (default 1)
+        @pollinterval  long  - polling interval in ms (default 250, range 50..60000)
+
     Messages:
-        bang             — silent retry; re-applies state. State changes
+        bang             - silent retry; re-applies state. State changes
                            will trigger an automatic dict dump.
-        info             — explicit dict dump on the dumpout (route via
+        info             - explicit dict dump on the dumpout (route via
                            [dict.view] / [dict.unpack] / [route ...])
-        poll <0|1>       — handled automatically via the attribute setter
-        pollinterval <n> — handled automatically via the attribute setter
+        poll <0|1>       - handled automatically via the attribute setter
+        pollinterval <n> - handled automatically via the attribute setter
+
+    Timing signals:
+        tempo~     - session BPM, sample-accurate, slowly varying
+        phase~     - sawtooth in [0, quantum), wraps modulo quantum
+        transport~ - 0.0 or 1.0, follows session.isPlaying()
+
+        These are derived from captureAudioSessionState() at the start of
+        each perform buffer, then advanced linearly across the buffer using
+        beatsPerSample = tempo / 60 / sampleRate. Quantum is read from the
+        @quantum attribute (constant per session, not a signal).
 
     Auto-dump:
-        Same as in~: emits a fresh dict on dumpout when meaningful state
+        Same as receive~: emits a fresh dict on dumpout when meaningful state
         changes (publishing flips on/off, peer count changes).
-    
+
     Notes:
         - Sample format on the wire is int16 interleaved.
         - The Sink's BufferHandle is acquired/released directly inside the
@@ -77,6 +92,7 @@
 #include <ableton/LinkAudio.hpp>
 
 #include <atomic>
+#include <cmath>
 #include <cstring>
 #include <memory>
 #include <new>
@@ -110,6 +126,12 @@ struct VoidLinkAudioOutImpl
     std::size_t  lastNumPeers         = 0;
     std::size_t  lastNumAudioChannels = 0;
     bool         firstStateApplied    = false;
+
+    // Flag to suppress propagation in tempo/transport attribute setters when
+    // the setter is being called from the poll-tick mirror sync (i.e. the
+    // change came FROM the session, we don't want to write it BACK).
+    // Without this, the touch -> setter -> session -> touch loop would spin.
+    bool         syncingFromSession   = false;
 };
 
 typedef struct _voidlinkaudiosend
@@ -121,6 +143,8 @@ typedef struct _voidlinkaudiosend
     t_symbol *a_peer;
     t_symbol *a_channel;
     double    a_quantum;
+    double    a_tempo;           // R/W: session tempo (BPM), 20..999
+    long      a_transport;       // R/W: 0/1, mirrors session.isPlaying()
     long      a_poll;
     long      a_pollinterval;
 
@@ -154,6 +178,10 @@ static t_max_err voidlinkaudiosend_set_enable      (t_voidlinkaudiosend *x, t_ob
 static t_max_err voidlinkaudiosend_set_peer        (t_voidlinkaudiosend *x, t_object *attr, long argc, t_atom *argv);
 static t_max_err voidlinkaudiosend_set_channel     (t_voidlinkaudiosend *x, t_object *attr, long argc, t_atom *argv);
 static t_max_err voidlinkaudiosend_set_quantum     (t_voidlinkaudiosend *x, t_object *attr, long argc, t_atom *argv);
+static t_max_err voidlinkaudiosend_set_tempo       (t_voidlinkaudiosend *x, t_object *attr, long argc, t_atom *argv);
+static t_max_err voidlinkaudiosend_get_tempo       (t_voidlinkaudiosend *x, t_object *attr, long *argc, t_atom **argv);
+static t_max_err voidlinkaudiosend_set_transport   (t_voidlinkaudiosend *x, t_object *attr, long argc, t_atom *argv);
+static t_max_err voidlinkaudiosend_get_transport   (t_voidlinkaudiosend *x, t_object *attr, long *argc, t_atom **argv);
 static t_max_err voidlinkaudiosend_set_poll        (t_voidlinkaudiosend *x, t_object *attr, long argc, t_atom *argv);
 static t_max_err voidlinkaudiosend_set_pollinterval(t_voidlinkaudiosend *x, t_object *attr, long argc, t_atom *argv);
 
@@ -239,6 +267,26 @@ void ext_main(void *r)
     CLASS_ATTR_FILTER_CLIP(c, "quantum", 1.0, 16.0);
     CLASS_ATTR_ACCESSORS  (c, "quantum", NULL, voidlinkaudiosend_set_quantum);
 
+    // R/W mirror of session tempo. Setter pushes via setTempo() (commit to
+    // app session state); getter reads back captureAppSessionState().tempo()
+    // so external changes (e.g. Live or another peer raising the tempo) are
+    // reflected when the attribute is queried via [getattr] or attrui.
+    CLASS_ATTR_DOUBLE(c, "tempo", 0, t_voidlinkaudiosend, a_tempo);
+    CLASS_ATTR_LABEL (c, "tempo", 0, "Tempo (BPM)");
+    CLASS_ATTR_FILTER_CLIP(c, "tempo", 20.0, 999.0);
+    CLASS_ATTR_ACCESSORS  (c, "tempo",
+                           voidlinkaudiosend_get_tempo,
+                           voidlinkaudiosend_set_tempo);
+
+    // R/W mirror of session transport (isPlaying). Requires
+    // enableStartStopSync(true) in the manager (which we do in the
+    // constructor) for setIsPlaying() to actually propagate.
+    CLASS_ATTR_LONG (c, "transport", 0, t_voidlinkaudiosend, a_transport);
+    CLASS_ATTR_STYLE_LABEL(c, "transport", 0, "onoff", "Transport (play/stop)");
+    CLASS_ATTR_ACCESSORS  (c, "transport",
+                           voidlinkaudiosend_get_transport,
+                           voidlinkaudiosend_set_transport);
+
     CLASS_ATTR_LONG (c, "poll",    0, t_voidlinkaudiosend, a_poll);
     CLASS_ATTR_STYLE_LABEL(c, "poll", 0, "onoff", "Auto-poll (publish retry + status)");
     CLASS_ATTR_ACCESSORS  (c, "poll", NULL, voidlinkaudiosend_set_poll);
@@ -272,8 +320,13 @@ voidlinkaudiosend_new(t_symbol *s, long argc, t_atom *argv)
 
     dsp_setup((t_pxobject *)x, (short)numInlets);
 
-    // Single dumpout, rightmost.
-    x->dumpout = outlet_new((t_object *)x, NULL);
+    // Outlet layout (left to right):
+    //   [tempo~] [phase~] [transport~] [dumpout]
+    // Order of outlet_new calls matters: rightmost first, leftmost last.
+    x->dumpout = outlet_new((t_object *)x, NULL);     // dumpout (rightmost)
+    outlet_new((t_object *)x, "signal");              // transport~
+    outlet_new((t_object *)x, "signal");              // phase~
+    outlet_new((t_object *)x, "signal");              // tempo~ (leftmost)
 
     // Default attribute values
     x->a_enable       = 1;
@@ -281,6 +334,8 @@ voidlinkaudiosend_new(t_symbol *s, long argc, t_atom *argv)
     x->a_peer         = gensym("Max");
     x->a_channel      = gensym("Max Out");
     x->a_quantum      = 4.0;
+    x->a_tempo        = 120.0;
+    x->a_transport    = 0;
     x->a_poll         = 1;
     x->a_pollinterval = 250;
 
@@ -303,8 +358,22 @@ voidlinkaudiosend_new(t_symbol *s, long argc, t_atom *argv)
 
     apply_state(x);
 
-    if (x->a_poll)
-        poll_start(x);
+    // Initial mirror sync: pull current session tempo/transport into our
+    // attribute storage so a freshly-instantiated object reflects the live
+    // session state. attrui observers may not be bound yet here, so we
+    // don't call object_attr_touch — that happens shortly via the first
+    // poll tick.
+    if (x->impl->manager)
+    {
+        x->a_tempo     = x->impl->manager->tempo();
+        x->a_transport = x->impl->manager->isPlaying() ? 1 : 0;
+    }
+
+    // Start polling if enabled. Schedule the first tick fast (50ms) instead
+    // of waiting a full pollinterval, so attrui observers attached after
+    // the patcher load get notified quickly via object_attr_touch.
+    if (x->a_poll && x->poll_clock)
+        clock_fdelay(x->poll_clock, 50.0);
 
     return x;
 }
@@ -342,7 +411,14 @@ voidlinkaudiosend_assist(t_voidlinkaudiosend *x, void *b, long io, long index, c
     }
     else
     {
-        snprintf(s, 256, "dumpout: status / dict");
+        switch (index)
+        {
+            case 0: snprintf(s, 256, "(signal) tempo (BPM)");           break;
+            case 1: snprintf(s, 256, "(signal) phase [0, quantum)");    break;
+            case 2: snprintf(s, 256, "(signal) transport (0/1)");       break;
+            case 3: snprintf(s, 256, "dumpout: status / dict");         break;
+            default: snprintf(s, 256, "outlet");                        break;
+        }
     }
 }
 
@@ -386,6 +462,72 @@ voidlinkaudiosend_set_quantum(t_voidlinkaudiosend *x, t_object *attr, long argc,
     if (x->a_quantum < 1.0)  x->a_quantum = 1.0;
     if (x->a_quantum > 16.0) x->a_quantum = 16.0;
     if (x->impl) x->impl->quantum = x->a_quantum;
+    return MAX_ERR_NONE;
+}
+
+// ----- Tempo ---------------------------------------------------------------
+//
+// Setter: store locally + push to session via manager (which uses
+// captureAppSessionState/setTempo/commit). When called as part of the
+// poll-tick mirror sync, skip propagation to avoid a feedback loop.
+//
+// Getter: always read live from the session, so [getattr tempo] / attrui /
+// pattr show the actual current session tempo, not just whatever this
+// object last wrote.
+
+static t_max_err
+voidlinkaudiosend_set_tempo(t_voidlinkaudiosend *x, t_object *attr, long argc, t_atom *argv)
+{
+    if (!argc || !argv) return MAX_ERR_NONE;
+    double bpm = atom_getfloat(argv);
+    if (bpm < 20.0)  bpm = 20.0;
+    if (bpm > 999.0) bpm = 999.0;
+    x->a_tempo = bpm;
+    // Skip propagation when the setter is being called as part of the
+    // poll-tick mirror sync (the value came from the session itself).
+    if (x->impl && x->impl->manager && !x->impl->syncingFromSession)
+        x->impl->manager->setTempo(bpm);
+    return MAX_ERR_NONE;
+}
+
+static t_max_err
+voidlinkaudiosend_get_tempo(t_voidlinkaudiosend *x, t_object *attr, long *argc, t_atom **argv)
+{
+    char alloc;
+    if (atom_alloc(argc, argv, &alloc) != MAX_ERR_NONE) return MAX_ERR_GENERIC;
+
+    double bpm = x->a_tempo;
+    if (x->impl && x->impl->manager)
+        bpm = x->impl->manager->tempo();
+
+    atom_setfloat(*argv, bpm);
+    return MAX_ERR_NONE;
+}
+
+// ----- Transport -----------------------------------------------------------
+
+static t_max_err
+voidlinkaudiosend_set_transport(t_voidlinkaudiosend *x, t_object *attr, long argc, t_atom *argv)
+{
+    if (!argc || !argv) return MAX_ERR_NONE;
+    long val = (atom_getlong(argv) != 0) ? 1 : 0;
+    x->a_transport = val;
+    if (x->impl && x->impl->manager && !x->impl->syncingFromSession)
+        x->impl->manager->setIsPlaying(val != 0);
+    return MAX_ERR_NONE;
+}
+
+static t_max_err
+voidlinkaudiosend_get_transport(t_voidlinkaudiosend *x, t_object *attr, long *argc, t_atom **argv)
+{
+    char alloc;
+    if (atom_alloc(argc, argv, &alloc) != MAX_ERR_NONE) return MAX_ERR_GENERIC;
+
+    long val = x->a_transport;
+    if (x->impl && x->impl->manager)
+        val = x->impl->manager->isPlaying() ? 1 : 0;
+
+    atom_setlong(*argv, val);
     return MAX_ERR_NONE;
 }
 
@@ -435,6 +577,33 @@ static void
 voidlinkaudiosend_tick(t_voidlinkaudiosend *x)
 {
     if (!x || !x->impl) return;
+
+    // Mirror-sync: if the session tempo/transport changed externally
+    // (e.g. another peer or Live), update our local attribute storage so
+    // attrui / pattr / [getattr] / inspector all reflect the new value.
+    // Use the syncingFromSession flag to suppress the setter's propagation
+    // back to the session (otherwise touch -> setter -> session -> touch loop).
+    if (x->impl->manager)
+    {
+        const double sessionTempo = x->impl->manager->tempo();
+        const long   sessionXport = x->impl->manager->isPlaying() ? 1 : 0;
+
+        if (std::abs(sessionTempo - x->a_tempo) > 0.001)
+        {
+            x->impl->syncingFromSession = true;
+            x->a_tempo = sessionTempo;
+            object_attr_touch((t_object *)x, gensym("tempo"));
+            x->impl->syncingFromSession = false;
+        }
+        if (sessionXport != x->a_transport)
+        {
+            x->impl->syncingFromSession = true;
+            x->a_transport = sessionXport;
+            object_attr_touch((t_object *)x, gensym("transport"));
+            x->impl->syncingFromSession = false;
+        }
+    }
+
     apply_state(x);
     if (x->a_poll && x->poll_clock)
         clock_fdelay(x->poll_clock, (double)x->a_pollinterval);
@@ -552,8 +721,16 @@ voidlinkaudiosend_dsp64(t_voidlinkaudiosend *x, t_object *dsp64, short *count,
     if (x->impl)
         x->impl->dspSampleRate = samplerate;
 
+    // Z_NO_INPLACE is critical here: this object has 1-2 signal inlets
+    // (audio to publish) AND 3 signal outlets (tempo~, phase~, transport~).
+    // Without this flag, MSP is free to alias outs[i] onto ins[j] memory,
+    // and our perform routine writes timing values into outs[] BEFORE
+    // copying ins[] into the network buffer. With aliasing on, that
+    // overwrites the audio inputs, so we publish tempo/phase to the network
+    // instead of the actual audio. Receive~ doesn't have this issue because
+    // it has 0 signal inlets.
     object_method(dsp64, gensym("dsp_add64"),
-                  x, voidlinkaudiosend_perform64, 0, NULL);
+                  x, voidlinkaudiosend_perform64, Z_NO_INPLACE, NULL);
 }
 
 static void
@@ -562,70 +739,120 @@ voidlinkaudiosend_perform64(t_voidlinkaudiosend *x, t_object *dsp64,
                            double **outs, long numouts,
                            long sampleframes, long flags, void *userparam)
 {
-    if (!x->impl || !x->impl->enabled || !x->impl->sink || !x->impl->manager)
-        return;
+    const long n = sampleframes;
 
-    const bool   isStereo  = x->impl->stereo && (numins >= 2);
-    const long   numFrames = sampleframes;
-    const std::size_t numCh = isStereo ? 2 : 1;
-    const std::size_t totalSamples = static_cast<std::size_t>(numFrames) * numCh;
+    // Outlet layout (left to right): tempo~, phase~, transport~
+    double *outTempo     = (numouts > 0) ? outs[0] : nullptr;
+    double *outPhase     = (numouts > 1) ? outs[1] : nullptr;
+    double *outTransport = (numouts > 2) ? outs[2] : nullptr;
+
+    // No manager / no DSP rate yet -> silence the timing outlets and bail.
+    if (!x->impl || !x->impl->manager || x->impl->dspSampleRate <= 0.0)
+    {
+        if (outTempo)     std::memset(outTempo,     0, sizeof(double) * n);
+        if (outPhase)     std::memset(outPhase,     0, sizeof(double) * n);
+        if (outTransport) std::memset(outTransport, 0, sizeof(double) * n);
+        return;
+    }
 
     auto& la = x->impl->manager->linkAudio();
 
-    // Acquire a buffer handle from the sink.
-    ableton::LinkAudioSink::BufferHandle bh(*x->impl->sink);
-    if (!bh)
-    {
-        x->impl->framesNoBuffer.fetch_add(numFrames);
-        return;
-    }
+    // ========================================================================
+    // STEP 1: Audio publish path.
+    //
+    // We do this FIRST, before writing anything to outs[], because in MSP
+    // the runtime is allowed to alias an output buffer onto an input buffer
+    // when in-place processing is permitted. Even though we set Z_NO_INPLACE
+    // in dsp64, reading ins[] first + writing outs[] second is the
+    // structurally correct order: it guarantees the published audio is the
+    // actual audio inputs, not whatever we happened to put into outs[].
+    // ========================================================================
 
-    if (totalSamples > bh.maxNumSamples)
+    if (x->impl->enabled && x->impl->sink)
     {
-        x->impl->framesCommitFail.fetch_add(numFrames);
-        return;
-    }
+        const bool        isStereo     = x->impl->stereo && (numins >= 2);
+        const std::size_t numCh        = isStereo ? 2 : 1;
+        const std::size_t totalSamples = static_cast<std::size_t>(n) * numCh;
 
-    const double *srcL = (numins >= 1) ? ins[0] : nullptr;
-    const double *srcR = (isStereo && numins >= 2) ? ins[1] : nullptr;
+        ableton::LinkAudioSink::BufferHandle bh(*x->impl->sink);
 
-    if (!srcL)
-        return;
-
-    if (!isStereo)
-    {
-        for (long i = 0; i < numFrames; ++i)
-            bh.samples[i] = float_to_int16_clamped(srcL[i]);
-    }
-    else
-    {
-        for (long i = 0; i < numFrames; ++i)
+        if (!bh)
         {
-            bh.samples[2 * i + 0] = float_to_int16_clamped(srcL[i]);
-            bh.samples[2 * i + 1] = float_to_int16_clamped(srcR[i]);
+            x->impl->framesNoBuffer.fetch_add(n);
+        }
+        else if (totalSamples > bh.maxNumSamples)
+        {
+            x->impl->framesCommitFail.fetch_add(n);
+        }
+        else
+        {
+            const double *srcL = (numins >= 1) ? ins[0] : nullptr;
+            const double *srcR = (isStereo && numins >= 2) ? ins[1] : nullptr;
+
+            if (srcL)
+            {
+                if (!isStereo)
+                {
+                    for (long i = 0; i < n; ++i)
+                        bh.samples[i] = float_to_int16_clamped(srcL[i]);
+                }
+                else
+                {
+                    for (long i = 0; i < n; ++i)
+                    {
+                        bh.samples[2 * i + 0] = float_to_int16_clamped(srcL[i]);
+                        bh.samples[2 * i + 1] = float_to_int16_clamped(srcR[i]);
+                    }
+                }
+
+                // Commit the buffer with full Link timing context. bh.commit()
+                // requires an app-thread session state, so we capture
+                // AppSessionState here.
+                const auto   appState           = la.captureAppSessionState();
+                const auto   nowApp             = la.clock().micros();
+                const double beatsAtBufferBegin = appState.beatAtTime(nowApp, x->impl->quantum);
+
+                const bool ok = bh.commit(appState,
+                                          beatsAtBufferBegin,
+                                          x->impl->quantum,
+                                          static_cast<std::size_t>(n),
+                                          numCh,
+                                          x->impl->dspSampleRate);
+
+                if (ok) x->impl->framesPublished.fetch_add(n);
+                else    x->impl->framesCommitFail.fetch_add(n);
+            }
         }
     }
 
-    // CRITICAL: explicitly commit the buffer with full Link timing context.
-    // Without this call, the data is filled but never sent on the network.
-    const auto   state             = la.captureAppSessionState();
-    const auto   now               = la.clock().micros();
-    const double beatsAtBufferBegin = state.beatAtTime(now, x->impl->quantum);
-    const double sampleRate        = x->impl->dspSampleRate > 0.0
-                                     ? x->impl->dspSampleRate
-                                     : 48000.0;
+    // ========================================================================
+    // STEP 2: Fill timing outlets.
+    //
+    // Safe to do now; we've already finished reading ins[] above. Even if
+    // outs[i] secretly shared memory with ins[j], the audio is already
+    // serialized into the sink buffer and committed.
+    // ========================================================================
 
-    const bool ok = bh.commit(state,
-                              beatsAtBufferBegin,
-                              x->impl->quantum,
-                              static_cast<std::size_t>(numFrames),
-                              numCh,
-                              sampleRate);
+    const auto   audioState  = la.captureAudioSessionState();
+    const auto   microsBegin = la.clock().micros();
 
-    if (ok)
-        x->impl->framesPublished.fetch_add(numFrames);
-    else
-        x->impl->framesCommitFail.fetch_add(numFrames);
+    const double tempoBpm       = audioState.tempo();
+    const double quantum        = (x->impl->quantum > 0.0) ? x->impl->quantum : 4.0;
+    const double beatBegin      = audioState.beatAtTime(microsBegin, quantum);
+    const double sr             = x->impl->dspSampleRate;
+    const double beatsPerSample = tempoBpm / 60.0 / sr;
+    const double playingVal     = audioState.isPlaying() ? 1.0 : 0.0;
+
+    for (long i = 0; i < n; ++i)
+    {
+        const double beat  = beatBegin + beatsPerSample * static_cast<double>(i);
+        double       phase = std::fmod(beat, quantum);
+        if (phase < 0.0) phase += quantum;
+
+        if (outTempo)     outTempo[i]     = tempoBpm;
+        if (outPhase)     outPhase[i]     = phase;
+        if (outTransport) outTransport[i] = playingVal;
+    }
 }
 
 
@@ -664,6 +891,7 @@ voidlinkaudiosend_info(t_voidlinkaudiosend *x)
     dictionary_appendlong  (d, gensym("frames_no_buffer"),    (t_atom_long)x->impl->framesNoBuffer.load());
     dictionary_appendlong  (d, gensym("frames_commit_fail"),  (t_atom_long)x->impl->framesCommitFail.load());
     dictionary_appendfloat (d, gensym("tempo"),               state.tempo());
+    dictionary_appendlong  (d, gensym("transport"),           state.isPlaying() ? 1 : 0);
     dictionary_appendfloat (d, gensym("beat"),                state.beatAtTime(now, x->impl->quantum));
     dictionary_appendfloat (d, gensym("phase"),               state.phaseAtTime(now, x->impl->quantum));
     dictionary_appendfloat (d, gensym("quantum"),             x->impl->quantum);

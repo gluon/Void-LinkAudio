@@ -4,11 +4,36 @@
 > network, sample-accurate, beat-synced, between any combination of TouchDesigner,
 > Max/MSP, VCV Rack, openFrameworks, and Ableton Live.
 
-> **Status: early R&D release (v0.1.0).** Built on top of Ableton's open-source
+> **Status: early R&D release (v0.1.1).** Built on top of Ableton's open-source
 > [Link](https://github.com/Ableton/link) library (GPL-2.0-or-later). Link Audio
 > is currently an alpha API — expect evolution.
 >
 > macOS Universal (Apple Silicon + Intel) and Windows x64 — both supported.
+
+---
+
+## What's new in v0.1.1
+
+**Link session timing signals** — every host now exposes the shared session as:
+
+- **Tempo** (read/write): change tempo from any peer, every other peer follows.
+- **Transport** (read/write): start/stop the transport from any peer.
+- **Beat** and **Phase** (read-only): the shared beat number and phase position
+  inside the quantum, audio-rate-accurate.
+
+Each host integrates this in its idiomatic way:
+
+- **Max** — `tempo~`, `phase~`, `transport~` outlets on both objects, plus R/W
+  attributes for tempo and transport.
+- **TouchDesigner** — `Tempo` and `Transport` parameters (R/W), plus
+  `transport`, `beat`, `phase`, `tempo` channels in the Info CHOP.
+- **VCV Rack** — `TEMPO` knob and `STATE` switch (R/W), plus three CV outputs:
+  `TEMPO` (bpm/100 V), `PHASE` (0–10 V over the quantum), `STATE` (0/10 V gate).
+- **openFrameworks** — `getTempo()`, `setTempo()`, `isTransportPlaying()`,
+  `setTransport()`, `getBeat()`, `getPhase()` on both stream classes.
+
+All hosts share the same session — change tempo in Live, the VCV knob follows.
+Toggle transport from VCV, Max picks it up. Etc.
 
 ---
 

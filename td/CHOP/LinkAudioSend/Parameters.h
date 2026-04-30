@@ -54,6 +54,16 @@ constexpr static char ChannelNameLabel[] = "Channel Name";
 constexpr static char QuantumName[]      = "Quantum";
 constexpr static char QuantumLabel[]     = "Quantum";
 
+// R/W mirrors of the shared Link session state. Setting these in the
+// CHOP propagates to all peers (Live, Max, other TDs, etc.). Reading
+// the live session value is done via the Info CHOP (`tempo`,
+// `transport` channels).
+constexpr static char TempoName[]        = "Tempo";
+constexpr static char TempoLabel[]       = "Tempo";
+
+constexpr static char TransportName[]    = "Transport";
+constexpr static char TransportLabel[]   = "Transport";
+
 
 class Parameters
 {
@@ -64,4 +74,6 @@ public:
     static std::string evalPeerName    (const TD::OP_Inputs*);
     static std::string evalChannelName (const TD::OP_Inputs*);
     static double      evalQuantum     (const TD::OP_Inputs*);
+    static double      evalTempo       (const TD::OP_Inputs*);
+    static bool        evalTransport   (const TD::OP_Inputs*);
 };

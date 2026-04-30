@@ -24,6 +24,7 @@
 #include "LinkAudioSend.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 using namespace TD;
@@ -134,6 +135,9 @@ LinkAudioSend::getOutputInfo(CHOP_OutputInfo* info, const OP_Inputs* inputs, voi
     const std::string newChName   = Parameters::evalChannelName(inputs);
     mQuantum = Parameters::evalQuantum(inputs);
 
+    const double userTempo = Parameters::evalTempo(inputs);
+    const bool   userXport = Parameters::evalTransport(inputs);
+
     if (mManager)
     {
         if (!newPeerName.empty() && newPeerName != mCurrentPeerName)
@@ -151,6 +155,31 @@ LinkAudioSend::getOutputInfo(CHOP_OutputInfo* info, const OP_Inputs* inputs, voi
 
             if (!wantEnabled)
                 destroySink();
+        }
+
+        // Tempo / Transport: push to the session only when the user
+        // actually changes the param. The very first check just snapshots
+        // the current param values without pushing — avoids clobbering
+        // session state just by instantiating the CHOP.
+        if (mFirstParamCheck)
+        {
+            mLastUserTempo     = userTempo;
+            mLastUserTransport = userXport ? 1 : 0;
+            mFirstParamCheck   = false;
+        }
+        else
+        {
+            if (std::abs(userTempo - mLastUserTempo) > 0.001)
+            {
+                mManager->setTempo(userTempo);
+                mLastUserTempo = userTempo;
+            }
+            const int xportInt = userXport ? 1 : 0;
+            if (xportInt != mLastUserTransport)
+            {
+                mManager->setIsPlaying(userXport);
+                mLastUserTransport = xportInt;
+            }
         }
     }
 
@@ -318,7 +347,7 @@ LinkAudioSend::execute(CHOP_Output* output, const OP_Inputs* inputs, void*)
 int32_t
 LinkAudioSend::getNumInfoCHOPChans(void*)
 {
-    return 11;
+    return 12;
 }
 
 void
@@ -369,6 +398,10 @@ LinkAudioSend::getInfoCHOPChan(int32_t index, OP_InfoCHOPChan* chan, void*)
     case 10:
         chan->name->setString("phase");
         chan->value = mCachedPhase;
+        break;
+    case 11:
+        chan->name->setString("transport");
+        chan->value = mCachedIsPlaying ? 1.0 : 0.0;
         break;
     }
 }

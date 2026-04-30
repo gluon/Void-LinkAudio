@@ -100,6 +100,16 @@ private:
     bool        mEnabled = false;
     double      mQuantum = 4.0;
 
+    // Push-on-change state for the R/W Tempo and Transport params.
+    // We only push the user-facing param value to the session when it
+    // actually changes. External session changes (Live, other peers) are
+    // NOT mirrored back into the params — they show up in the Info CHOP.
+    // mFirstParamCheck = true so the very first cook just snapshots the
+    // current param values without clobbering session state.
+    bool        mFirstParamCheck   = true;
+    double      mLastUserTempo     = 120.0;
+    int         mLastUserTransport = 0;
+
     std::size_t mCachedNumPeers      = 0;
     std::size_t mCachedNumChannels   = 0;
     double      mCachedTempo         = 0.0;

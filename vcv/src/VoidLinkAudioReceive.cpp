@@ -55,9 +55,20 @@ constexpr std::size_t kRingSize = 16384;
 
 struct VoidLinkAudioReceive : Module {
 
-    enum ParamId   { NUM_PARAMS };
+    enum ParamId   {
+        TEMPO_PARAM,        // BPM knob (20-999, default 120)
+        TRANSPORT_PARAM,    // toggle button (0=stopped, 1=playing)
+        NUM_PARAMS
+    };
     enum InputId   { NUM_INPUTS };
-    enum OutputId  { OUT_L_OUTPUT, OUT_R_OUTPUT, NUM_OUTPUTS };
+    enum OutputId  {
+        OUT_L_OUTPUT,
+        OUT_R_OUTPUT,
+        TEMPO_OUTPUT,       // bpm / 100 V (20 BPM = 0.2V, 999 BPM = 9.99V)
+        PHASE_OUTPUT,       // phase * 10 / quantum V (0..10V over the quantum)
+        TRANSPORT_OUTPUT,   // 0V stopped, 10V playing (gate)
+        NUM_OUTPUTS
+    };
     enum LightId   {
         STATUS_GREEN_LIGHT,
         STATUS_RED_LIGHT,
@@ -93,6 +104,11 @@ struct VoidLinkAudioReceive : Module {
     std::atomic<std::size_t> peerCount    {0};
     std::atomic<bool>        isSubscribed {false};
 
+    // ── Bidirectional sync state for tempo/transport params ─────────────────
+    bool   mFirstProcess     = true;
+    double mLastKnobTempo    = 120.0;
+    bool   mLastKnobTransport = false;
+
     // Drop indicator latch.
     std::atomic<uint64_t> lastSeenDropped {0};
     float                 dropFlashTimer = 0.0f;
@@ -106,8 +122,16 @@ struct VoidLinkAudioReceive : Module {
     VoidLinkAudioReceive() {
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 
-        configOutput(OUT_L_OUTPUT, "Audio L");
-        configOutput(OUT_R_OUTPUT, "Audio R");
+        configOutput(OUT_L_OUTPUT,     "Audio L");
+        configOutput(OUT_R_OUTPUT,     "Audio R");
+
+        configOutput(TEMPO_OUTPUT,     "Tempo (bpm/100 V)");
+        configOutput(PHASE_OUTPUT,     "Phase (0-10V over quantum)");
+        configOutput(TRANSPORT_OUTPUT, "Transport (0V stopped, 10V playing)");
+
+        configParam(TEMPO_PARAM, 20.0f, 999.0f, 120.0f, "Tempo", " BPM");
+        configSwitch(TRANSPORT_PARAM, 0.0f, 1.0f, 0.0f, "Transport",
+                     {"Stopped", "Playing"});
 
         manager = LinkAudioManager::acquire();
 
@@ -265,7 +289,62 @@ struct VoidLinkAudioReceive : Module {
     }
 
     void process(const ProcessArgs& args) override {
-        // Drain one sample per channel per process() call.
+        // ── Capture session state once per process() ────────────────────────
+        if (!manager) {
+            outputs[OUT_L_OUTPUT].setVoltage(0.0f);
+            outputs[OUT_R_OUTPUT].setVoltage(0.0f);
+            outputs[TEMPO_OUTPUT].setVoltage(0.0f);
+            outputs[PHASE_OUTPUT].setVoltage(0.0f);
+            outputs[TRANSPORT_OUTPUT].setVoltage(0.0f);
+            return;
+        }
+
+        auto&        la           = manager->linkAudio();
+        auto         sessionState = la.captureAppSessionState();
+        const auto   now          = la.clock().micros();
+        const double quantum      = quantum_;
+        const double sessionTempo = sessionState.tempo();
+        const bool   sessionPlay  = sessionState.isPlaying();
+
+        // ── Bidirectional tempo/transport sync ──────────────────────────────
+        if (mFirstProcess) {
+            params[TEMPO_PARAM].setValue(static_cast<float>(sessionTempo));
+            params[TRANSPORT_PARAM].setValue(sessionPlay ? 1.0f : 0.0f);
+            mLastKnobTempo     = sessionTempo;
+            mLastKnobTransport = sessionPlay;
+            mFirstProcess      = false;
+        } else {
+            const double knobTempo     = params[TEMPO_PARAM].getValue();
+            const bool   knobTransport = params[TRANSPORT_PARAM].getValue() > 0.5f;
+
+            if (std::abs(knobTempo - mLastKnobTempo) > 0.001) {
+                manager->setTempo(knobTempo);
+                mLastKnobTempo = knobTempo;
+            }
+            else if (std::abs(sessionTempo - mLastKnobTempo) > 0.001) {
+                params[TEMPO_PARAM].setValue(static_cast<float>(sessionTempo));
+                mLastKnobTempo = sessionTempo;
+            }
+
+            if (knobTransport != mLastKnobTransport) {
+                manager->setIsPlaying(knobTransport);
+                mLastKnobTransport = knobTransport;
+            }
+            else if (sessionPlay != mLastKnobTransport) {
+                params[TRANSPORT_PARAM].setValue(sessionPlay ? 1.0f : 0.0f);
+                mLastKnobTransport = sessionPlay;
+            }
+        }
+
+        // ── Timing outputs (audio-rate CV) ──────────────────────────────────
+        outputs[TEMPO_OUTPUT].setVoltage(
+            static_cast<float>(sessionTempo / 100.0));
+        const double phase = sessionState.phaseAtTime(now, quantum);
+        outputs[PHASE_OUTPUT].setVoltage(
+            static_cast<float>(phase * 10.0 / quantum));
+        outputs[TRANSPORT_OUTPUT].setVoltage(sessionPlay ? 10.0f : 0.0f);
+
+        // ── Audio output: drain one sample per channel ──────────────────────
         float sL = 0.0f, sR = 0.0f;
         if (isSubscribed.load()) {
             ringL.read(&sL, 1);
@@ -344,6 +423,54 @@ struct ReceivePeerCountDisplay : Widget {
     }
 };
 
+// Static panel labels, drawn in NVG (NanoSVG used by VCV does not render <text>).
+struct ReceivePanelLabels : Widget {
+    void draw(const DrawArgs& args) override {
+        std::shared_ptr<window::Font> font =
+            APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+        if (!font || !font->handle) return;
+
+        nvgFontFaceId(args.vg, font->handle);
+
+        auto label = [&](float x, float y, float size, NVGcolor color, int letterSpacing,
+                         const char* text) {
+            nvgFontSize  (args.vg, size);
+            nvgTextLetterSpacing(args.vg, (float)letterSpacing);
+            nvgTextAlign (args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            nvgFillColor (args.vg, color);
+            nvgText(args.vg, x, y, text, nullptr);
+        };
+
+        const NVGcolor cTitle  = nvgRGB(0xcc, 0xcc, 0xcc);
+        const NVGcolor cBanner = nvgRGB(0x0a, 0x0a, 0x0a);
+        const NVGcolor cMain   = nvgRGB(0xaa, 0xaa, 0xaa);
+        const NVGcolor cSub    = nvgRGB(0x88, 0x88, 0x88);
+
+        // Title
+        label(45.0f, 32.0f, 11.0f, cTitle, 2, "VOID LINK");
+
+        // Banner module name
+        label(45.0f, 51.0f, 11.0f, cBanner, 3, "RECEIVE");
+
+        // Status label
+        label(45.0f, 100.0f, 6.0f, cSub, 1, "SUBSCRIBED");
+
+        // Tempo / State labels (above knob and switch)
+        label(45.0f, 144.0f, 7.0f, cMain, 2, "TEMPO");
+        label(45.0f, 194.0f, 7.0f, cMain, 2, "STATE");
+
+        // Timing output labels (3 columns)
+        label(18.0f, 248.0f, 7.0f, cSub, 0, "TEMPO");
+        label(45.0f, 248.0f, 7.0f, cSub, 0, "PHASE");
+        label(72.0f, 248.0f, 7.0f, cSub, 0, "STATE");
+
+        // Audio outputs label
+        label(45.0f, 298.0f, 7.0f, cMain, 2, "FROM LINK");
+        label(27.0f, 307.0f, 5.0f, cSub, 0, "L");
+        label(63.0f, 307.0f, 5.0f, cSub, 0, "R");
+    }
+};
+
 struct ReceiveTextEditMenuItem : ui::MenuItem {
     std::string                      placeholder;
     std::function<std::string()>     getter;
@@ -382,31 +509,60 @@ struct VoidLinkAudioReceiveWidget : ModuleWidget {
         setModule(module);
         setPanel(createPanel(asset::plugin(pluginInstance, "res/VoidLinkAudioReceive.svg")));
 
+        // Static panel labels (drawn in NVG since NanoSVG does not render <text>).
+        ReceivePanelLabels* labels = new ReceivePanelLabels;
+        labels->box.pos  = Vec(0, 0);
+        labels->box.size = Vec(90, 380);
+        addChild(labels);
+
         addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
         addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
         addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
         addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
+        // ========================================================================
+        // Layout positions match VoidLinkAudioReceive.svg exactly.
+        // SVG provides the labels and separator lines; C++ provides the widgets.
+        // ========================================================================
+
+        // Status LEDs at y=80 (label "SUBSCRIBED" in SVG at y=100).
         addChild(createLightCentered<MediumLight<GreenLight>>(
-            Vec(box.size.x * 0.5f - 6.0f, 90.0f),
+            Vec(box.size.x * 0.5f - 6.0f, 80.0f),
             module, VoidLinkAudioReceive::STATUS_GREEN_LIGHT));
         addChild(createLightCentered<SmallLight<RedLight>>(
-            Vec(box.size.x * 0.5f + 6.0f, 90.0f),
+            Vec(box.size.x * 0.5f + 6.0f, 80.0f),
             module, VoidLinkAudioReceive::STATUS_RED_LIGHT));
 
+        // Peer count display at y=117.
         ReceivePeerCountDisplay* peerDisplay = new ReceivePeerCountDisplay;
         peerDisplay->module    = module;
-        peerDisplay->box.pos   = Vec(0, 140);
+        peerDisplay->box.pos   = Vec(0, 109);
         peerDisplay->box.size  = Vec(box.size.x, 16);
         addChild(peerDisplay);
 
-        const float xL = box.size.x * 0.30f;
-        const float xR = box.size.x * 0.70f;
+        // Tempo knob at y=175 (SVG separator at y=138, label "TEMPO" at y=153).
+        addParam(createParamCentered<RoundLargeBlackKnob>(
+            Vec(box.size.x * 0.5f, 170.0f), module, VoidLinkAudioReceive::TEMPO_PARAM));
 
+        // Transport switch at y=225 (SVG label "STATE" at y=210).
+        addParam(createParamCentered<BefacoSwitch>(
+            Vec(box.size.x * 0.5f, 215.0f), module, VoidLinkAudioReceive::TRANSPORT_PARAM));
+
+        // 3 timing jacks at y=280 (SVG separator at y=248, labels at y=263).
+        // X positions match SVG label columns: 18, 45, 72.
         addOutput(createOutputCentered<PJ301MPort>(
-            Vec(xL, 280.0f), module, VoidLinkAudioReceive::OUT_L_OUTPUT));
+            Vec(18.0f, 265.0f), module, VoidLinkAudioReceive::TEMPO_OUTPUT));
         addOutput(createOutputCentered<PJ301MPort>(
-            Vec(xR, 280.0f), module, VoidLinkAudioReceive::OUT_R_OUTPUT));
+            Vec(45.0f, 265.0f), module, VoidLinkAudioReceive::PHASE_OUTPUT));
+        addOutput(createOutputCentered<PJ301MPort>(
+            Vec(72.0f, 265.0f), module, VoidLinkAudioReceive::TRANSPORT_OUTPUT));
+
+        // 2 audio jacks at y=348 (SVG separator at y=305, label "FROM LINK"
+        // at y=320, "L"/"R" at y=333). X positions match SVG: 27, 63.
+        addOutput(createOutputCentered<PJ301MPort>(
+            Vec(27.0f, 325.0f), module, VoidLinkAudioReceive::OUT_L_OUTPUT));
+        addOutput(createOutputCentered<PJ301MPort>(
+            Vec(63.0f, 325.0f), module, VoidLinkAudioReceive::OUT_R_OUTPUT));
     }
 
     void appendContextMenu(Menu* menu) override {
