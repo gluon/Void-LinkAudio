@@ -4,11 +4,40 @@
 > network, sample-accurate, beat-synced, between any combination of TouchDesigner,
 > Max/MSP, VCV Rack, openFrameworks, and Ableton Live.
 
-> **Status: early R&D release (v0.1.1).** Built on top of Ableton's open-source
+> **Status: early R&D release (v0.2.0).** Built on top of Ableton's open-source
 > [Link](https://github.com/Ableton/link) library (GPL-2.0-or-later). Link Audio
 > is currently an alpha API — expect evolution.
 >
 > macOS Universal (Apple Silicon + Intel) and Windows x64 — both supported.
+
+---
+
+## What's new in v0.2.0
+
+**Pure Data support.** To the best of our knowledge, this is the **first public
+Pd implementation of Ableton Link Audio**.
+
+Two new externals for **Pd vanilla 0.56-2+**:
+
+- **`void.linkaudio.send~`** — publish 2 audio inlets (stereo) as a Link Audio
+  channel.
+- **`void.linkaudio.receive~`** — subscribe to a Link Audio channel; output
+  L/R audio.
+
+Both objects expose the shared Link session as 3 audio-rate signal outlets:
+`tempo~`, `phase~`, `transport~`. They also accept `tempo <bpm>` and
+`transport <0|1>` messages to drive the session from Pd, propagating to all
+peers (Live, Max, TouchDesigner, VCV, oF, other Pds) just like the Max
+attribute setters do.
+
+A status info outlet emits `<key> <values...>` messages (subscribe state,
+peer count, channel listing, frame counters) on meaningful state changes,
+pipe through `[route]` to extract individual fields.
+
+Built and validated on **macOS Universal** (arm64 + x86_64) and **Windows x64**.
+Linux and **plugdata** (libpd VST3/AU/CLAP host) support coming next.
+
+Help patches `void.linkaudio.{send,receive}~-help.pd` accompany each external.
 
 ---
 
@@ -63,6 +92,7 @@ it natively yet — and lets them all interoperate with each other and with Live
 | **Max / MSP**            | macOS Universal, Windows x64          | working                 |
 | **TouchDesigner**        | macOS Universal, Windows x64          | working                 |
 | **VCV Rack 2**           | macOS arm64 + x64, Windows x64        | working                 |
+| **Pure Data** (vanilla)  | macOS Universal, Windows x64          | working (v0.2.0, new)   |
 | **openFrameworks**       | macOS, Linux, Windows                 | working (separate repo) |
 
 Cross-platform interop has been validated: audio passes between Win Max ↔ Mac
@@ -78,7 +108,8 @@ Max / Live / TouchDesigner / VCV Rack and back.
 | `max/`         | Max / MSP externals | Full Max package (helpers, refpages)   |
 | `td/`          | TouchDesigner CHOPs | Send + Receive CHOPs                   |
 | `vcv/`         | VCV Rack module     | Send + Receive modules                 |
-| `thirdparty/`  | Submodule           | [Ableton/link](https://github.com/Ableton/link) (GPL-2.0-or-later) |
+| `pd/`          | Pure Data externals | `send~` + `receive~` for Pd vanilla    |
+| `thirdparty/`  | Submodule           | [Ableton/link](https://github.com/Ableton/link) (GPL-2.0-or-later) + [pd-lib-builder](https://github.com/pure-data/pd-lib-builder) |
 
 **openFrameworks** support lives in its own repo, following the `ofxAddon`
 convention:
@@ -97,6 +128,7 @@ signed) binaries are available in [Releases](../../releases):
 - `VoidLinkAudio-Max-vX.Y.Z.zip` — Max package (Mac + Win in one)
 - `VoidLinkAudio-TD-vX.Y.Z.zip` — TouchDesigner CHOPs (Mac + Win)
 - `VoidLinkAudio-VCV-vX.Y.Z.zip` — VCV Rack plugin (Mac arm64/x64 + Win)
+- `VoidLinkAudio-Pd-vX.Y.Z.zip` — Pure Data externals (Mac Universal + Win)
 
 Each zip contains a README with install instructions specific to that host.
 
@@ -195,6 +227,50 @@ For dual-arch macOS builds (arm64 + x64), see `vcv/README.md` for details.
 > ⚠️ **Important**: VCV Rack's engine has no internal clock. You must have an
 > Audio module in your VCV patch for VoidLinkAudio Send to publish at the
 > correct sample rate. The Audio module doesn't need to be connected to anything.
+
+### Pure Data
+
+Two externals for **Pd vanilla 0.56-2 or later**:
+
+- **`void.linkaudio.receive~`** — receive audio from a Link Audio channel
+- **`void.linkaudio.send~`** — publish 2 audio inlets as a stereo channel
+
+Build uses [pd-lib-builder](https://github.com/pure-data/pd-lib-builder)
+(submodule under `thirdparty/`).
+
+**macOS** (universal arm64 + x86_64):
+
+```bash
+cd pd
+./build.sh
+```
+
+The wrapper script forces a universal binary build; `make` directly
+defaults to single-arch.
+
+**Windows x64** (via MSYS2 + MinGW-w64 toolchain):
+
+```bash
+# install MSYS2: winget install MSYS2.MSYS2
+# in MSYS2 shell:  pacman -S --needed base-devel mingw-w64-x86_64-toolchain
+# add to PATH (User env vars):  C:\msys64\usr\bin  AND  C:\msys64\mingw64\bin
+
+cd pd
+make PDDIR=C:/Pd
+```
+
+Override `PDDIR` to point at your Pd vanilla install root (the folder
+containing `src/`, `bin/`, `doc/`).
+
+**Outputs**: `void.linkaudio.{send,receive}~.pd_darwin` (Mac) or `.dll`
+(Windows). Add the `pd/` folder to **Pd > Preferences > Path**, or copy
+the externals + their help patches into your Pd externals directory.
+
+> ⚠️ **Sample rate must match.** Pd vanilla performs no internal SRC.
+> If Pd runs at 44.1 kHz against a publisher at 48 kHz (Live default),
+> the receive ring buffer overflows continuously at the rate ratio
+> (~8 % continuous drops). Set Pd to 48 kHz in **Media > Audio settings**
+> for clean interop.
 
 ### openFrameworks
 
