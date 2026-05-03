@@ -77,6 +77,28 @@ If you must keep Pd at a different sample rate for other reasons, expect
 audible dropouts on the receive path until an internal SRC is added in a
 later release.
 
+## Testing locally with two Pd instances
+
+On macOS, double-clicking `Pd-X.app` opens patches in the **same Pd instance**, not a new process. To test send~ and receive~ end-to-end on a single machine, you need to launch a second independent Pd process:
+
+```bash
+open -n /Applications/Pd-0.56-2.app
+```
+
+The `-n` flag forces a new process. Repeat for as many independent Pd
+peers as you want.
+
+Once you have two Pd instances:
+
+1. Open `void.linkaudio.send~-help.pd` in instance #1
+2. Open `void.linkaudio.receive~-help.pd` in instance #2
+3. Make sure the **channel name** and **peer filter** in receive~-help
+   match what send~-help is publishing (default help patches use
+   different demo values — set them explicitly to test)
+4. Both instances must run at **48 kHz** (Media > Audio settings)
+
+The same applies if you test against any other Link Audio peer (Ableton Live, another Max/TD/VCV instance): channel names and the optional peer filter must match.
+
 ## Required setup before building
 
 You'll need:
