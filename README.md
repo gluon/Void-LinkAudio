@@ -4,7 +4,7 @@
 > network, sample-accurate, beat-synced, between any combination of TouchDesigner,
 > Max/MSP, VCV Rack, openFrameworks, and Ableton Live.
 
-> **Status: early R&D release (v0.2.0).** Built on top of Ableton's open-source
+> **Status: early R&D release (v0.2.4).** Built on top of Ableton's open-source
 > [Link](https://github.com/Ableton/link) library (GPL-2.0-or-later). Link Audio
 > is currently an alpha API — expect evolution.
 >
@@ -40,6 +40,22 @@ Linux and **plugdata** (libpd VST3/AU/CLAP host) support coming next.
 Help patches `void.linkaudio.{send,receive}~-help.pd` accompany each external.
 
 ---
+
+## What's new in v0.2.4
+
+**Critical fix for the macOS x86_64 build.** The v0.1.1 mac-x64 .vcvplugin
+shipped with `LinkAudioManager` symbols undefined, preventing the plugin
+from loading on Intel Macs and on Apple Silicon Macs running VCV Rack
+under Rosetta. The mac-arm64 build was unaffected. Caused by an arch
+leakage in the build script — the linker was silently picking up an
+arm64 object file from the previous build step. Fix verified via
+`nm` symbol inspection; added a defensive symbol check to the build
+script so any future regression fails the build instead of producing
+a broken binary.
+
+If you were on v0.1.1 and the plugin failed to load with a "symbol not
+found in flat namespace" error, install this v0.2.4 release and it'll
+work.
 
 ## What's new in v0.1.1
 
