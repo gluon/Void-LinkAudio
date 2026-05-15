@@ -14,7 +14,7 @@ of Ableton Link Audio**.
 pd/
 ├── README.md                                  This file
 ├── Makefile                                   pd-lib-builder driven
-├── build.sh                                   universal-binary wrapper for macOS
+├── build.sh                                   multi-arch build wrapper
 ├── src/
 │   ├── void.linkaudio.send~.cpp               Publisher external
 │   └── void.linkaudio.receive~.cpp            Subscriber external
@@ -88,6 +88,9 @@ open -n /Applications/Pd-0.56-2.app
 The `-n` flag forces a new process. Repeat for as many independent Pd
 peers as you want.
 
+On Linux, just launch `pd` twice from two terminals. On Windows, launch
+`pd.exe` twice — each launch is its own process by default.
+
 Once you have two Pd instances:
 
 1. Open `void.linkaudio.send~-help.pd` in instance #1
@@ -107,6 +110,9 @@ You'll need:
 - A C++17 compiler:
   - **macOS** — Apple Clang from Xcode 14+
   - **Windows** — MinGW-w64 gcc 13+ via MSYS2 (see Windows build below)
+  - **Linux** — gcc 11+ (Ubuntu 22.04+, Debian 12+, equivalent on other
+    distros). For dual-arch output, also the cross-compilation toolchain
+    (`gcc-x86-64-linux-gnu` / `gcc-aarch64-linux-gnu`).
 - The Ableton Link and pd-lib-builder submodules initialised:
 
   ```bash
@@ -126,7 +132,9 @@ binaries (arm64 + x86_64), targeting macOS 11.0.
 The `build.sh` wrapper exists because `pd-lib-builder` overrides the
 Makefile-level `arch =` directive internally. Passing `arch="..."` as a
 command-line argument is the only reliable way to force a Mac universal
-binary; the wrapper does that on Darwin and is a no-op elsewhere.
+binary; on Darwin the wrapper does that, on Linux it drives two-pass
+native + cross-compile builds, and on Windows it falls back to a single
+native invocation of `make`.
 
 The default `PDDIR` in the Makefile points at the author's local Pd
 install. Override if Pd is elsewhere:
@@ -167,6 +175,47 @@ install root — the folder containing `src/`, `bin/`, `doc/`. Output:
 > MSYS2's `make` (4.x) comes first in your PATH. The legacy GnuWin32
 > make doesn't understand pd-lib-builder's modern Makefile syntax.
 
+## Build (Linux)
+
+One-time setup on Ubuntu / Debian:
+
+```bash
+sudo apt install build-essential puredata-dev \
+                 gcc-x86-64-linux-gnu g++-x86-64-linux-gnu \
+                 gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+```
+
+The `puredata-dev` package provides the Pd headers expected by
+`pd-lib-builder`. The cross-compilers are only needed if you want to
+produce binaries for the other architecture from your current host
+(typically ARM64 → x86_64 or vice versa).
+
+Then build:
+
+```bash
+cd pd
+./build.sh
+```
+
+On Linux, `build.sh` performs two passes:
+
+1. A **native** build for the current host architecture.
+2. A **cross-compile** build for the other architecture, if the matching
+   cross-compiler is available. If not, that pass is skipped with a
+   warning and only the native binary is produced.
+
+Output lands under:
+
+```
+pd/dist/linux-arm64/void.linkaudio.{send,receive}~.pd_linux
+pd/dist/linux-x64/void.linkaudio.{send,receive}~.pd_linux
+```
+
+The extension `.pd_linux` is shared by both architectures, hence the
+per-arch subfolders. The Makefile pattern follows pd-lib-builder
+conventions, so `CC` / `CXX` overrides are honoured by the cross-compile
+pass — no toolchain file needed.
+
 ## Install
 
 Pd vanilla loads externals from any folder in its **search path**. The
@@ -188,6 +237,9 @@ externals folder:
 
 - **macOS** — `~/Documents/Pd/externals/`
 - **Windows** — `%APPDATA%\Pd\externals\` (typically `C:\Users\<you>\AppData\Roaming\Pd\externals\`)
+- **Linux** — `~/.local/lib/pd/extra/` or `~/pd-externals/` (either is
+  picked up by Pd vanilla; the `extra` location matches the system
+  package convention).
 
 ## plugdata bonus
 

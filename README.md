@@ -4,13 +4,29 @@
 > network, sample-accurate, beat-synced, between any combination of TouchDesigner,
 > Max/MSP, VCV Rack, openFrameworks, and Ableton Live.
 
-> **Status: early R&D release (v0.2.4).** Built on top of Ableton's open-source
+> **Status: early R&D release (v0.3.0).** Built on top of Ableton's open-source
 > [Link](https://github.com/Ableton/link) library (GPL-2.0-or-later). Link Audio
 > is currently an alpha API — expect evolution.
 >
-> macOS Universal (Apple Silicon + Intel) and Windows x64 — both supported.
+> macOS Universal (Apple Silicon + Intel), Windows x64, and Linux (ARM64 + x86_64)
+> — all supported.
 
 ---
+
+## What's new in v0.3.0
+
+**Linux support.** VCV Rack and Pure Data connectors now build and ship for
+Linux on both x86_64 and ARM64.
+
+- **Pure Data** — `void.linkaudio.{send,receive}~.pd_linux` for `linux-arm64`
+  and `linux-x64`. Tested against Pd vanilla on Ubuntu.
+- **VCV Rack** — `VoidLinkAudio-X.X.X-lin-arm64.vcvplugin` and `-lin-x64.vcvplugin`.
+
+Max and TouchDesigner are intentionally not covered: neither runs on Linux.
+
+This brings the connector matrix to 5 platforms × 4 hosts. Build pipeline
+is fully scripted (`tools/build-linux.sh` orchestrates ARM64 native and
+x86_64 via Docker on Apple Silicon hosts).
 
 ## What's new in v0.2.0
 
@@ -34,24 +50,18 @@ A status info outlet emits `<key> <values...>` messages (subscribe state,
 peer count, channel listing, frame counters) on meaningful state changes,
 pipe through `[route]` to extract individual fields.
 
-Built and validated on **macOS Universal** (arm64 + x86_64) and **Windows x64**.
-Linux and **plugdata** (libpd VST3/AU/CLAP host) support coming next.
-
 Help patches `void.linkaudio.{send,receive}~-help.pd` accompany each external.
-
----
 
 ## What's new in v0.2.4
 
-**Critical fix for the macOS x86_64 build.** The v0.1.1 mac-x64 .vcvplugin
-shipped with `LinkAudioManager` symbols undefined, preventing the plugin
-from loading on Intel Macs and on Apple Silicon Macs running VCV Rack
+**Critical fix for the macOS x86_64 VCV Rack build.** The v0.1.1 mac-x64
+.vcvplugin shipped with `LinkAudioManager` symbols undefined, preventing the
+plugin from loading on Intel Macs and on Apple Silicon Macs running VCV Rack
 under Rosetta. The mac-arm64 build was unaffected. Caused by an arch
-leakage in the build script — the linker was silently picking up an
-arm64 object file from the previous build step. Fix verified via
-`nm` symbol inspection; added a defensive symbol check to the build
-script so any future regression fails the build instead of producing
-a broken binary.
+leakage in the build script — the linker was silently picking up an arm64
+object file from the previous build step. Fix verified via `nm` symbol
+inspection; added a defensive symbol check to the build script so any future
+regression fails the build instead of producing a broken binary.
 
 If you were on v0.1.1 and the plugin failed to load with a "symbol not
 found in flat namespace" error, install this v0.2.4 release and it'll
@@ -102,17 +112,18 @@ it natively yet — and lets them all interoperate with each other and with Live
 
 ## Supported hosts
 
-| Host                     | Platforms                             | Status                  |
-|--------------------------|---------------------------------------|-------------------------|
-| **Ableton Live 12.4+**   | native (Mac + Win)                    | works out of the box    |
-| **Max / MSP**            | macOS Universal, Windows x64          | working                 |
-| **TouchDesigner**        | macOS Universal, Windows x64          | working                 |
-| **VCV Rack 2**           | macOS arm64 + x64, Windows x64        | working                 |
-| **Pure Data** (vanilla)  | macOS Universal, Windows x64          | working (v0.2.0, new)   |
-| **openFrameworks**       | macOS, Linux, Windows                 | working (separate repo) |
+| Host                     | Platforms                                                   | Status                  |
+|--------------------------|-------------------------------------------------------------|-------------------------|
+| **Ableton Live 12.4+**   | native (Mac + Win)                                          | works out of the box    |
+| **Max / MSP**            | macOS Universal, Windows x64                                | working                 |
+| **TouchDesigner**        | macOS Universal, Windows x64                                | working                 |
+| **VCV Rack 2**           | macOS arm64 + x64, Windows x64, Linux arm64 + x64           | working                 |
+| **Pure Data** (vanilla)  | macOS Universal, Windows x64, Linux arm64 + x64             | working                 |
+| **openFrameworks**       | macOS, Linux, Windows                                       | working (separate repo) |
 
 Cross-platform interop has been validated: audio passes between Win Max ↔ Mac
-Max / Live / TouchDesigner / VCV Rack and back.
+Max / Live / TouchDesigner / VCV Rack and back. Linux peers participate the
+same way.
 
 ---
 
@@ -143,8 +154,8 @@ signed) binaries are available in [Releases](../../releases):
 
 - `VoidLinkAudio-Max-vX.Y.Z.zip` — Max package (Mac + Win in one)
 - `VoidLinkAudio-TD-vX.Y.Z.zip` — TouchDesigner CHOPs (Mac + Win)
-- `VoidLinkAudio-VCV-vX.Y.Z.zip` — VCV Rack plugin (Mac arm64/x64 + Win)
-- `VoidLinkAudio-Pd-vX.Y.Z.zip` — Pure Data externals (Mac Universal + Win)
+- `VoidLinkAudio-VCV-vX.Y.Z.zip` — VCV Rack plugin (Mac arm64/x64 + Win + Linux arm64/x64)
+- `VoidLinkAudio-Pd-vX.Y.Z.zip` — Pure Data externals (Mac Universal + Win + Linux arm64/x64)
 
 Each zip contains a README with install instructions specific to that host.
 
@@ -154,9 +165,10 @@ Each zip contains a README with install instructions specific to that host.
 
 You'll need:
 
-- **macOS 11+** (universal arm64+x86_64) or **Windows 10 x64**
+- **macOS 11+** (universal arm64+x86_64), **Windows 10 x64**, or **Linux**
+  (Ubuntu 22.04+ / Debian 12+ recommended)
 - **CMake 3.22+**
-- A **C++17** compiler (Apple Clang, MSVC 2022, or MinGW gcc 13+)
+- A **C++17** compiler (Apple Clang, MSVC 2022, MinGW gcc 13+, or system gcc 11+)
 - Host SDKs (see per-host sections below)
 
 Clone with submodules:
@@ -231,14 +243,17 @@ Two modules, **Void Link Audio Send** and **Void Link Audio Receive**, both
 visible in the **Structure Void** browser category.
 
 You'll need the [Rack SDK](https://vcvrack.com/manual/Building#Plugins) for
-your target architecture.
+your target architecture (`mac-arm64`, `mac-x64`, `win-x64`, `lin-x64`, or
+`lin-arm64`).
 
 ```bash
 cd vcv
 RACK_DIR=/path/to/Rack-SDK make
 ```
 
-For dual-arch macOS builds (arm64 + x64), see `vcv/README.md` for details.
+For dual-arch macOS builds (arm64 + x64), or for Linux from-source builds
+that require a locally-compiled `libRack.so`, see `vcv/README.md` for the
+specifics.
 
 > ⚠️ **Important**: VCV Rack's engine has no internal clock. You must have an
 > Audio module in your VCV patch for VoidLinkAudio Send to publish at the
@@ -261,8 +276,15 @@ cd pd
 ./build.sh
 ```
 
-The wrapper script forces a universal binary build; `make` directly
-defaults to single-arch.
+**Linux** (native arch + optional cross-compile to the other arch via
+`gcc-x86-64-linux-gnu` / `gcc-aarch64-linux-gnu`):
+
+```bash
+cd pd
+./build.sh
+```
+
+Output lands in `pd/dist/linux-arm64/` and/or `pd/dist/linux-x64/`.
 
 **Windows x64** (via MSYS2 + MinGW-w64 toolchain):
 
@@ -278,9 +300,10 @@ make PDDIR=C:/Pd
 Override `PDDIR` to point at your Pd vanilla install root (the folder
 containing `src/`, `bin/`, `doc/`).
 
-**Outputs**: `void.linkaudio.{send,receive}~.pd_darwin` (Mac) or `.dll`
-(Windows). Add the `pd/` folder to **Pd > Preferences > Path**, or copy
-the externals + their help patches into your Pd externals directory.
+**Outputs**: `void.linkaudio.{send,receive}~.pd_darwin` (Mac), `.dll`
+(Windows), `.pd_linux` (Linux). Add the `pd/` folder to
+**Pd > Preferences > Path**, or copy the externals + their help patches
+into your Pd externals directory.
 
 > ⚠️ **Sample rate must match.** Pd vanilla performs no internal SRC.
 > If Pd runs at 44.1 kHz against a publisher at 48 kHz (Live default),

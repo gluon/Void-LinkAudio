@@ -82,7 +82,8 @@ You need:
 The Rack SDK is downloaded separately from
 <https://vcvrack.com/downloads> — pick the SDK that matches your platform
 (`Rack-SDK-<version>-mac-arm64`, `Rack-SDK-<version>-mac-x64`,
-`Rack-SDK-<version>-win-x64`, or `Rack-SDK-<version>-lin-x64`).
+`Rack-SDK-<version>-win-x64`, `Rack-SDK-<version>-lin-x64`, or
+`Rack-SDK-<version>-lin-arm64`).
 
 ## Build
 
@@ -95,8 +96,70 @@ This produces `plugin.dylib` (Mac) / `plugin.so` (Linux) / `plugin.dll`
 (Windows) and packages it as `dist/VoidLinkAudio-<version>-<arch>.vcvplugin`.
 
 For dual-arch macOS (arm64 + x86_64), build twice with each SDK and ship
-two `.vcvplugin` files. The cross-compile is driven by the SDK choice;
-both files install side-by-side in Rack's user plugins folder.
+two `.vcvplugin` files. Same logic for Linux (`lin-arm64` and `lin-x64`).
+The cross-compile is driven by the SDK choice; multiple `.vcvplugin`
+files install side-by-side in Rack's user plugins folder.
+
+### Build (Linux specifics)
+
+The Rack SDK on Linux is **not enough** by itself: the SDK headers
+require a built `libRack.so`, which means you need to clone and build
+the full Rack source tree, not just download the SDK archive.
+
+One-time setup on Ubuntu / Debian:
+
+```bash
+sudo apt install build-essential cmake autoconf automake libtool \
+                 libjansson-dev libjack-jackd2-dev libpulse-dev \
+                 libasound2-dev libgl1-mesa-dev libglu1-mesa-dev \
+                 libx11-dev libxrandr-dev libxinerama-dev \
+                 libxcursor-dev libxi-dev libxext-dev jq zstd
+```
+
+Clone and build Rack:
+
+```bash
+git clone https://github.com/VCVRack/Rack.git
+cd Rack
+git submodule update --init --recursive --force
+make dep
+make
+```
+
+`make dep` builds ~15 vendored libraries (glew, glfw, libcurl, jansson,
+libsamplerate, rtaudio, ...) and takes 10–20 minutes the first time.
+`make` then builds Rack itself.
+
+On ARM64 hosts you may hit two issues:
+
+1. `libsamplerate-0.1.9/config.guess` predates ARM64. Replace it with
+   the system version:
+
+   ```bash
+   find dep/libsamplerate* -name config.guess -exec \
+       cp /usr/share/automake-*/config.guess {} \;
+   find dep/libsamplerate* -name config.sub -exec \
+       cp /usr/share/automake-*/config.sub {} \;
+   ```
+
+2. `src/engine/Engine.cpp` calls `__yield()`, a GCC intrinsic not
+   available on Ubuntu's GCC for ARM64. Patch with the equivalent
+   inline asm:
+
+   ```bash
+   sed -i 's/__yield()/asm volatile("yield")/' src/engine/Engine.cpp
+   ```
+
+Then build VoidLinkAudio against your local Rack tree:
+
+```bash
+cd /path/to/VoidLinkAudio/vcv
+RACK_DIR=/path/to/Rack make
+RACK_DIR=/path/to/Rack make dist
+```
+
+The output `.vcvplugin` is auto-named from `uname -m`
+(`lin-arm64` on ARM64 hosts, `lin-x64` on x86_64).
 
 ## Install
 
@@ -110,7 +173,8 @@ This drops the `.vcvplugin` into Rack's user plugins folder:
 - **macOS arm64** — `~/Library/Application Support/Rack2/plugins-mac-arm64/`
 - **macOS x86_64** — `~/Library/Application Support/Rack2/plugins-mac-x64/`
 - **Windows** — `%LOCALAPPDATA%\Rack2\plugins-win-x64\`
-- **Linux** — `~/.Rack2/plugins-lin-x64/`
+- **Linux x86_64** — `~/.Rack2/plugins-lin-x64/`
+- **Linux ARM64** — `~/.Rack2/plugins-lin-arm64/`
 
 Restart Rack. Search for "Void Link" in the module browser, drop both
 modules in a rack, **add an Audio module to the patch** (see "Critical
